@@ -312,6 +312,27 @@ class ReportEngine:
             
             stats_df = pd.DataFrame(stats_data)
         
+        # Apply sorting to the statistics DataFrame
+        sort_by = config.get('sort_by', 'none')
+        if sort_by != 'none' and not stats_df.empty:
+            if sort_by == 'column_name':
+                stats_df = stats_df.sort_values('Column')
+            elif sort_by == 'data_type':
+                stats_df = stats_df.sort_values('Data Type')
+            elif sort_by == 'count_descending':
+                # Convert Count column to numeric for sorting (remove commas)
+                stats_df['_sort_count'] = stats_df['Count'].str.replace(',', '').astype(int)
+                stats_df = stats_df.sort_values('_sort_count', ascending=False)
+                stats_df = stats_df.drop('_sort_count', axis=1)
+            elif sort_by == 'missing_ascending':
+                # Convert Missing column to numeric for sorting (remove commas)
+                stats_df['_sort_missing'] = stats_df['Missing'].str.replace(',', '').astype(int)
+                stats_df = stats_df.sort_values('_sort_missing', ascending=True)
+                stats_df = stats_df.drop('_sort_missing', axis=1)
+            
+            # Reset index after sorting
+            stats_df = stats_df.reset_index(drop=True)
+        
         return None, stats_df
     
     def generate_histogram(self, df: pd.DataFrame, 
@@ -422,6 +443,7 @@ class ReportEngine:
         y_column = config.get('y_axis')
         group_by_column = config.get('group_by_column')
         aggregation = config.get('aggregation', 'sum')
+        sort_by = config.get('sort_by', 'none')
         
         if not x_column or x_column not in df.columns:
             raise ValueError("X-axis column not specified or not found")
@@ -432,34 +454,64 @@ class ReportEngine:
         # Use most recent snapshots to avoid double counting opportunities
         df_deduplicated = self._get_most_recent_snapshots(df)
         
+        def apply_sorting(data, x_col, y_col, sort_option):
+            """Apply sorting to aggregated data."""
+            if sort_option == 'category_name':
+                return data.sort_values(x_col)
+            elif sort_option == 'value_ascending':
+                return data.sort_values(y_col, ascending=True)
+            elif sort_option == 'value_descending':
+                return data.sort_values(y_col, ascending=False)
+            else:  # 'none' or any other value
+                return data
+        
         # Aggregate data
         if group_by_column and group_by_column in df_deduplicated.columns:
             agg_data = df_deduplicated.groupby([x_column, group_by_column])[y_column].agg(aggregation).reset_index()
             
             fig = go.Figure()
             
-            for i, group_value in enumerate(agg_data[group_by_column].unique()):
+            # Get unique group values and sort them for consistent ordering
+            group_values = sorted([gv for gv in agg_data[group_by_column].unique() if not pd.isna(gv)])
+            
+            for i, group_value in enumerate(group_values):
                 group_data = agg_data[agg_data[group_by_column] == group_value]
                 
+                # Apply sorting to this group's data
+                group_data_sorted = apply_sorting(group_data, x_column, y_column, sort_by)
+                
                 fig.add_trace(go.Bar(
-                    x=group_data[x_column],
-                    y=group_data[y_column],
+                    x=group_data_sorted[x_column],
+                    y=group_data_sorted[y_column],
                     name=str(group_value),
                     marker_color=COLOR_PALETTE[i % len(COLOR_PALETTE)]
                 ))
         else:
             agg_data = df_deduplicated.groupby(x_column)[y_column].agg(aggregation).reset_index()
             
+            # Apply sorting to the aggregated data
+            agg_data_sorted = apply_sorting(agg_data, x_column, y_column, sort_by)
+            
             fig = go.Figure(data=[
                 go.Bar(
-                    x=agg_data[x_column],
-                    y=agg_data[y_column],
+                    x=agg_data_sorted[x_column],
+                    y=agg_data_sorted[y_column],
                     marker_color=COLOR_PALETTE[0]
                 )
             ])
         
+        # Add sorting info to title
+        sort_suffix = ""
+        if sort_by != 'none':
+            sort_labels = {
+                'category_name': ' (Sorted by Category)',
+                'value_ascending': ' (Sorted by Value ↑)',
+                'value_descending': ' (Sorted by Value ↓)'
+            }
+            sort_suffix = sort_labels.get(sort_by, '')
+        
         fig.update_layout(
-            title=f"{aggregation.title()} of {y_column} by {x_column} (Most Recent Snapshots)",
+            title=f"{aggregation.title()} of {y_column} by {x_column}{sort_suffix} (Most Recent Snapshots)",
             xaxis_title=x_column,
             yaxis_title=f"{aggregation.title()} of {y_column}",
             template=CHART_THEME,
@@ -636,6 +688,7 @@ class ReportEngine:
         """Generate box plot visualization."""
         x_column = config.get('x_axis')
         y_column = config.get('y_axis')
+        sort_by = config.get('sort_by', 'none')
         
         if not x_column or x_column not in df.columns:
             raise ValueError("X-axis column not specified or not found")
@@ -646,12 +699,34 @@ class ReportEngine:
         # Use most recent snapshots to avoid double counting opportunities
         df_deduplicated = self._get_most_recent_snapshots(df)
         
+        # Calculate statistics for each category to enable value-based sorting
+        category_stats = []
+        categories = [cat for cat in df_deduplicated[x_column].unique() if not pd.isna(cat)]
+        
+        for category in categories:
+            category_data = df_deduplicated[df_deduplicated[x_column] == category][y_column].dropna()
+            if not category_data.empty:
+                category_stats.append({
+                    'category': category,
+                    'median': category_data.median(),
+                    'mean': category_data.mean(),
+                    'count': len(category_data)
+                })
+        
+        # Sort categories based on user selection
+        if sort_by == 'category_name':
+            category_stats.sort(key=lambda x: str(x['category']))
+        elif sort_by == 'value_ascending':
+            category_stats.sort(key=lambda x: x['median'])  # Sort by median value
+        elif sort_by == 'value_descending':
+            category_stats.sort(key=lambda x: x['median'], reverse=True)
+        # else: keep original order
+        
         fig = go.Figure()
         
-        for i, category in enumerate(df_deduplicated[x_column].unique()):
-            if pd.isna(category):
-                continue
-            
+        # Create box plots in the sorted order
+        for i, cat_stat in enumerate(category_stats):
+            category = cat_stat['category']
             category_data = df_deduplicated[df_deduplicated[x_column] == category][y_column].dropna()
             
             fig.add_trace(go.Box(
@@ -660,8 +735,18 @@ class ReportEngine:
                 marker_color=COLOR_PALETTE[i % len(COLOR_PALETTE)]
             ))
         
+        # Add sorting info to title
+        sort_suffix = ""
+        if sort_by != 'none':
+            sort_labels = {
+                'category_name': ' (Sorted by Category)',
+                'value_ascending': ' (Sorted by Median ↑)',
+                'value_descending': ' (Sorted by Median ↓)'
+            }
+            sort_suffix = sort_labels.get(sort_by, '')
+        
         fig.update_layout(
-            title=f"Distribution of {y_column} by {x_column} (Most Recent Snapshots)",
+            title=f"Distribution of {y_column} by {x_column}{sort_suffix} (Most Recent Snapshots)",
             xaxis_title=x_column,
             yaxis_title=y_column,
             template=CHART_THEME,

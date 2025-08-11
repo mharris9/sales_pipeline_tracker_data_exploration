@@ -419,6 +419,39 @@ def render_reports_section():
                 help="How to aggregate the data"
             )
         
+        # Sorting options for reports with categorical data
+        if selected_report in ['bar_chart', 'box_plot']:
+            st.subheader("📊 Sorting Options")
+            config['sort_by'] = st.selectbox(
+                "Sort By:",
+                options=['category_name', 'value_ascending', 'value_descending', 'none'],
+                index=3,  # Default to 'none' (original order)
+                format_func=lambda x: {
+                    'category_name': 'Category Name (A-Z)',
+                    'value_ascending': 'Value (Low to High)',
+                    'value_descending': 'Value (High to Low)',
+                    'none': 'Original Order'
+                }[x],
+                help="Choose how to sort the categories in the chart"
+            )
+        
+        # Sorting options for descriptive statistics
+        if selected_report == 'descriptive_statistics':
+            st.subheader("📊 Sorting Options")
+            config['sort_by'] = st.selectbox(
+                "Sort Table By:",
+                options=['column_name', 'data_type', 'count_descending', 'missing_ascending', 'none'],
+                index=4,  # Default to 'none' (original order)
+                format_func=lambda x: {
+                    'column_name': 'Column Name (A-Z)',
+                    'data_type': 'Data Type',
+                    'count_descending': 'Record Count (High to Low)',
+                    'missing_ascending': 'Missing Data (Low to High)',
+                    'none': 'Original Order'
+                }[x],
+                help="Choose how to sort the rows in the statistics table"
+            )
+        
         if selected_report == 'histogram':
             config['bins'] = st.slider(
                 "Number of Bins:",
