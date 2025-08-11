@@ -225,34 +225,34 @@ class ReportEngine:
                         'Group': group_value,
                         'Column': column,
                         'Data Type': col_type.value,
-                        'Count': stats.get('count', 0),
-                        'Non-Null': stats.get('non_null_count', 0),
-                        'Missing': stats.get('null_count', 0),
+                        'Count': f"{stats.get('count', 0):,}",
+                        'Non-Null': f"{stats.get('non_null_count', 0):,}",
+                        'Missing': f"{stats.get('null_count', 0):,}",
                         'Missing %': f"{stats.get('null_percentage', 0):.1f}%"
                     }
                     
                     # Add type-specific statistics
                     if col_type == DataType.NUMERICAL:
                         row.update({
-                            'Mean': f"{stats.get('mean', 0):.2f}",
-                            'Median': f"{stats.get('median', 0):.2f}",
-                            'Std Dev': f"{stats.get('std', 0):.2f}",
-                            'Min': f"{stats.get('min', 0):.2f}",
-                            'Max': f"{stats.get('max', 0):.2f}",
-                            'Skewness': f"{stats.get('skewness', 0):.2f}",
-                            'Kurtosis': f"{stats.get('kurtosis', 0):.2f}"
+                            'Mean': f"{stats.get('mean', 0):,.0f}",
+                            'Median': f"{stats.get('median', 0):,.0f}",
+                            'Std Dev': f"{stats.get('std', 0):,.0f}",
+                            'Min': f"{stats.get('min', 0):,.0f}",
+                            'Max': f"{stats.get('max', 0):,.0f}",
+                            'Skewness': f"{stats.get('skewness', 0):,.0f}",
+                            'Kurtosis': f"{stats.get('kurtosis', 0):,.0f}"
                         })
                     elif col_type == DataType.CATEGORICAL:
                         row.update({
-                            'Unique Values': stats.get('unique_count', 0),
+                            'Unique Values': f"{stats.get('unique_count', 0):,}",
                             'Most Frequent': stats.get('most_frequent', 'N/A'),
-                            'Most Freq Count': stats.get('most_frequent_count', 0)
+                            'Most Freq Count': f"{stats.get('most_frequent_count', 0):,}"
                         })
                     elif col_type == DataType.DATE:
                         row.update({
                             'Earliest': str(stats.get('earliest', 'N/A')),
                             'Latest': str(stats.get('latest', 'N/A')),
-                            'Range (Days)': stats.get('range_days', 0)
+                            'Range (Days)': f"{stats.get('range_days', 0):,}"
                         })
                     
                     stats_data.append(row)
@@ -275,34 +275,34 @@ class ReportEngine:
                 row = {
                     'Column': column,
                     'Data Type': col_type.value,
-                    'Count': stats.get('count', 0),
-                    'Non-Null': stats.get('non_null_count', 0),
-                    'Missing': stats.get('null_count', 0),
+                    'Count': f"{stats.get('count', 0):,}",
+                    'Non-Null': f"{stats.get('non_null_count', 0):,}",
+                    'Missing': f"{stats.get('null_count', 0):,}",
                     'Missing %': f"{stats.get('null_percentage', 0):.1f}%"
                 }
                 
                 # Add type-specific statistics
                 if col_type == DataType.NUMERICAL:
                     row.update({
-                        'Mean': f"{stats.get('mean', 0):.2f}",
-                        'Median': f"{stats.get('median', 0):.2f}",
-                        'Std Dev': f"{stats.get('std', 0):.2f}",
-                        'Min': f"{stats.get('min', 0):.2f}",
-                        'Max': f"{stats.get('max', 0):.2f}",
-                        'Skewness': f"{stats.get('skewness', 0):.2f}",
-                        'Kurtosis': f"{stats.get('kurtosis', 0):.2f}"
+                        'Mean': f"{stats.get('mean', 0):,.0f}",
+                        'Median': f"{stats.get('median', 0):,.0f}",
+                        'Std Dev': f"{stats.get('std', 0):,.0f}",
+                        'Min': f"{stats.get('min', 0):,.0f}",
+                        'Max': f"{stats.get('max', 0):,.0f}",
+                        'Skewness': f"{stats.get('skewness', 0):,.0f}",
+                        'Kurtosis': f"{stats.get('kurtosis', 0):,.0f}"
                     })
                 elif col_type == DataType.CATEGORICAL:
                     row.update({
-                        'Unique Values': stats.get('unique_count', 0),
+                        'Unique Values': f"{stats.get('unique_count', 0):,}",
                         'Most Frequent': stats.get('most_frequent', 'N/A'),
-                        'Most Freq Count': stats.get('most_frequent_count', 0)
+                        'Most Freq Count': f"{stats.get('most_frequent_count', 0):,}"
                     })
                 elif col_type == DataType.DATE:
                     row.update({
                         'Earliest': str(stats.get('earliest', 'N/A')),
                         'Latest': str(stats.get('latest', 'N/A')),
-                        'Range (Days)': stats.get('range_days', 0)
+                        'Range (Days)': f"{stats.get('range_days', 0):,}"
                     })
                 
                 stats_data.append(row)
