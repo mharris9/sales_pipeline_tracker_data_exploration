@@ -531,12 +531,26 @@ class OutlierManager:
                 # Configure column widths based on content
                 column_config = {}
                 for col in breakdown_df.columns:
-                    max_content_length = max(
-                        len(str(col)),
-                        breakdown_df[col].astype(str).str.len().max() if not breakdown_df[col].empty else 0
-                    )
-                    width = min(max(max_content_length * 8 + 20, 100), 200)
-                    column_config[col] = st.column_config.Column(width=width)
+                    try:
+                        col_name_length = len(str(col))
+                        
+                        if breakdown_df[col].empty:
+                            content_length = 0
+                        else:
+                            content_lengths = breakdown_df[col].astype(str).str.len()
+                            content_length = content_lengths.max() if not content_lengths.empty else 0
+                            if pd.isna(content_length):
+                                content_length = 0
+                        
+                        max_content_length = max(col_name_length, int(content_length))
+                        
+                        # Convert to regular Python int to avoid JSON serialization issues
+                        width = int(min(max(max_content_length * 8 + 20, 100), 200))
+                        column_config[col] = st.column_config.Column(width=width)
+                        
+                    except Exception as e:
+                        # Fallback to default width if calculation fails
+                        column_config[col] = st.column_config.Column(width=100)
                 
                 st.dataframe(breakdown_df, use_container_width=True, column_config=column_config)
         

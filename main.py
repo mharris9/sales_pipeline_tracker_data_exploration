@@ -41,14 +41,30 @@ def create_auto_sized_dataframe_config(df: pd.DataFrame, min_width: int = 80, ma
     """
     column_config = {}
     for col in df.columns:
-        # Calculate max width needed for this column
-        max_content_length = max(
-            len(str(col)),  # Column name length
-            df[col].astype(str).str.len().max() if not df[col].empty else 0
-        )
-        # Set width with some padding (8px per character + base padding)
-        width = min(max(max_content_length * 8 + 20, min_width), max_width)
-        column_config[col] = st.column_config.Column(width=width)
+        try:
+            # Calculate max width needed for this column
+            col_name_length = len(str(col))
+            
+            # Handle empty dataframe or columns with all NaN values
+            if df[col].empty:
+                content_length = 0
+            else:
+                content_lengths = df[col].astype(str).str.len()
+                content_length = content_lengths.max() if not content_lengths.empty else 0
+                # Handle case where max() returns NaN
+                if pd.isna(content_length):
+                    content_length = 0
+            
+            max_content_length = max(col_name_length, int(content_length))
+            
+            # Set width with some padding (8px per character + base padding)
+            # Convert to regular Python int to avoid JSON serialization issues
+            width = int(min(max(max_content_length * 8 + 20, min_width), max_width))
+            column_config[col] = st.column_config.Column(width=width)
+            
+        except Exception as e:
+            # Fallback to default width if calculation fails
+            column_config[col] = st.column_config.Column(width=int(min_width))
     
     return column_config
 
