@@ -427,6 +427,58 @@ def render_reports_section():
                 value=30,
                 help="Number of bins for the histogram"
             )
+            
+            # Upper limit for highly skewed distributions
+            st.subheader("📊 Distribution Limits")
+            use_upper_limit = st.checkbox(
+                "Set Upper Limit",
+                value=False,
+                help="Group all values above a threshold into a single bin (helpful for highly skewed data)"
+            )
+            
+            if use_upper_limit:
+                # Get the selected column to calculate reasonable limits
+                x_column = config.get('x_axis')
+                if x_column and st.session_state.data_loaded:
+                    try:
+                        column_data = st.session_state.current_df[x_column].dropna()
+                        if not column_data.empty and pd.api.types.is_numeric_dtype(column_data):
+                            data_min = float(column_data.min())
+                            data_max = float(column_data.max())
+                            data_95th = float(column_data.quantile(0.95))
+                            data_99th = float(column_data.quantile(0.99))
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.metric("95th Percentile", f"{data_95th:,.0f}")
+                            with col2:
+                                st.metric("99th Percentile", f"{data_99th:,.0f}")
+                            
+                            config['upper_limit'] = st.number_input(
+                                "Upper Limit Value:",
+                                min_value=data_min,
+                                max_value=data_max * 2,  # Allow setting above max for flexibility
+                                value=data_95th,
+                                step=(data_max - data_min) / 100,
+                                help=f"Values above this will be grouped into a single '>= {data_95th:,.0f}' bin"
+                            )
+                            
+                            config['upper_limit_label'] = st.text_input(
+                                "Upper Limit Label:",
+                                value=f">= {config.get('upper_limit', data_95th):,.0f}",
+                                help="Label for the upper limit bin"
+                            )
+                        else:
+                            st.info("Upper limit is only available for numerical columns.")
+                            config['upper_limit'] = None
+                    except Exception as e:
+                        st.warning(f"Could not calculate limits for selected column: {str(e)}")
+                        config['upper_limit'] = None
+                else:
+                    st.info("Please select an X-axis column to configure upper limit.")
+                    config['upper_limit'] = None
+            else:
+                config['upper_limit'] = None
         
         if selected_report == 'scatter_plot':
             numerical_columns = st.session_state.data_handler.get_numerical_columns()

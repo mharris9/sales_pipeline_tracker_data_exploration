@@ -320,43 +320,98 @@ class ReportEngine:
         x_column = config.get('x_axis')
         group_by_column = config.get('group_by_column')
         bins = config.get('bins', 30)
+        upper_limit = config.get('upper_limit')
+        upper_limit_label = config.get('upper_limit_label', f">= {upper_limit}")
         
         if not x_column or x_column not in df.columns:
             raise ValueError("X-axis column not specified or not found")
         
-        fig = go.Figure()
+        # Use most recent snapshots to avoid double counting opportunities
+        df_deduplicated = self._get_most_recent_snapshots(df)
         
-        if group_by_column and group_by_column in df.columns:
+        def prepare_data_with_limit(data_series):
+            """Prepare data by applying upper limit if specified."""
+            clean_data = data_series.dropna()
+            
+            if upper_limit is not None and pd.api.types.is_numeric_dtype(clean_data):
+                # Create a copy to avoid modifying original data
+                limited_data = clean_data.copy()
+                
+                # Count values above the limit
+                above_limit_count = (limited_data > upper_limit).sum()
+                
+                if above_limit_count > 0:
+                    # Replace values above limit with the limit value
+                    limited_data[limited_data > upper_limit] = upper_limit
+                    
+                return limited_data, above_limit_count
+            
+            return clean_data, 0
+        
+        fig = go.Figure()
+        title_suffix = ""
+        
+        if group_by_column and group_by_column in df_deduplicated.columns:
             # Grouped histogram
-            for i, group_value in enumerate(df[group_by_column].unique()):
+            total_above_limit = 0
+            
+            for i, group_value in enumerate(df_deduplicated[group_by_column].unique()):
                 if pd.isna(group_value):
                     continue
                 
-                group_data = df[df[group_by_column] == group_value][x_column].dropna()
+                group_data = df_deduplicated[df_deduplicated[group_by_column] == group_value][x_column]
+                limited_data, above_count = prepare_data_with_limit(group_data)
+                total_above_limit += above_count
                 
                 fig.add_trace(go.Histogram(
-                    x=group_data,
+                    x=limited_data,
                     name=str(group_value),
                     nbinsx=bins,
                     marker_color=COLOR_PALETTE[i % len(COLOR_PALETTE)],
                     opacity=0.7
                 ))
+            
+            if total_above_limit > 0:
+                title_suffix = f" (Upper Limit: {upper_limit_label}, {total_above_limit:,} values grouped)"
+                
         else:
             # Simple histogram
+            limited_data, above_count = prepare_data_with_limit(df_deduplicated[x_column])
+            
             fig.add_trace(go.Histogram(
-                x=df[x_column].dropna(),
+                x=limited_data,
                 nbinsx=bins,
                 marker_color=COLOR_PALETTE[0]
             ))
+            
+            if above_count > 0:
+                title_suffix = f" (Upper Limit: {upper_limit_label}, {above_count:,} values grouped)"
         
-        fig.update_layout(
-            title=f"Distribution of {x_column}",
-            xaxis_title=x_column,
-            yaxis_title="Frequency",
-            template=CHART_THEME,
-            height=CHART_HEIGHT,
-            bargap=0.1
-        )
+        # Update x-axis to show the upper limit clearly
+        layout_updates = {
+            'title': f"Distribution of {x_column}{title_suffix}",
+            'xaxis_title': x_column,
+            'yaxis_title': "Frequency",
+            'template': CHART_THEME,
+            'height': CHART_HEIGHT,
+            'bargap': 0.1
+        }
+        
+        # Add annotation if upper limit is used
+        if upper_limit is not None and (title_suffix != ""):
+            fig.add_annotation(
+                text=f"Note: Values above {upper_limit:,.0f} are grouped into the rightmost bin",
+                xref="paper", yref="paper",
+                x=0.02, y=0.98,
+                showarrow=False,
+                font=dict(size=10, color="gray"),
+                align="left",
+                bgcolor="rgba(255,255,255,0.8)",
+                bordercolor="gray",
+                borderwidth=1
+            )
+        
+        fig.update_layout(**layout_updates)
         
         return fig, None
     
