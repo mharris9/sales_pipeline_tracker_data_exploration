@@ -201,15 +201,18 @@ class ReportEngine:
         selected_columns = config.get('selected_columns', df.columns.tolist())
         group_by_column = config.get('group_by_column')
         
-        if group_by_column and group_by_column in df.columns:
+        # Use most recent snapshots to avoid double counting opportunities
+        df_deduplicated = self._get_most_recent_snapshots(df)
+        
+        if group_by_column and group_by_column in df_deduplicated.columns:
             # Generate grouped statistics
             stats_data = []
             
-            for group_value in df[group_by_column].unique():
+            for group_value in df_deduplicated[group_by_column].unique():
                 if pd.isna(group_value):
                     continue
                 
-                group_df = df[df[group_by_column] == group_value]
+                group_df = df_deduplicated[df_deduplicated[group_by_column] == group_value]
                 
                 for column in selected_columns:
                     if column not in group_df.columns or column == group_by_column:
@@ -263,14 +266,14 @@ class ReportEngine:
             stats_data = []
             
             for column in selected_columns:
-                if column not in df.columns:
+                if column not in df_deduplicated.columns:
                     continue
                 
                 # Detect column type
                 from utils.data_types import detect_data_type
-                col_type = detect_data_type(df[column], column)
+                col_type = detect_data_type(df_deduplicated[column], column)
                 
-                stats = calculate_statistics(df[column], col_type)
+                stats = calculate_statistics(df_deduplicated[column], col_type)
                 
                 row = {
                     'Column': column,
@@ -371,9 +374,12 @@ class ReportEngine:
         if not y_column or y_column not in df.columns:
             raise ValueError("Y-axis column not specified or not found")
         
+        # Use most recent snapshots to avoid double counting opportunities
+        df_deduplicated = self._get_most_recent_snapshots(df)
+        
         # Aggregate data
-        if group_by_column and group_by_column in df.columns:
-            agg_data = df.groupby([x_column, group_by_column])[y_column].agg(aggregation).reset_index()
+        if group_by_column and group_by_column in df_deduplicated.columns:
+            agg_data = df_deduplicated.groupby([x_column, group_by_column])[y_column].agg(aggregation).reset_index()
             
             fig = go.Figure()
             
@@ -387,7 +393,7 @@ class ReportEngine:
                     marker_color=COLOR_PALETTE[i % len(COLOR_PALETTE)]
                 ))
         else:
-            agg_data = df.groupby(x_column)[y_column].agg(aggregation).reset_index()
+            agg_data = df_deduplicated.groupby(x_column)[y_column].agg(aggregation).reset_index()
             
             fig = go.Figure(data=[
                 go.Bar(
@@ -398,7 +404,7 @@ class ReportEngine:
             ])
         
         fig.update_layout(
-            title=f"{aggregation.title()} of {y_column} by {x_column}",
+            title=f"{aggregation.title()} of {y_column} by {x_column} (Most Recent Snapshots)",
             xaxis_title=x_column,
             yaxis_title=f"{aggregation.title()} of {y_column}",
             template=CHART_THEME,
@@ -421,14 +427,17 @@ class ReportEngine:
         if not y_column or y_column not in df.columns:
             raise ValueError("Y-axis column not specified or not found")
         
+        # Use most recent snapshots to avoid double counting opportunities
+        df_deduplicated = self._get_most_recent_snapshots(df)
+        
         fig = go.Figure()
         
-        if group_by_column and group_by_column in df.columns:
-            for i, group_value in enumerate(df[group_by_column].unique()):
+        if group_by_column and group_by_column in df_deduplicated.columns:
+            for i, group_value in enumerate(df_deduplicated[group_by_column].unique()):
                 if pd.isna(group_value):
                     continue
                 
-                group_data = df[df[group_by_column] == group_value]
+                group_data = df_deduplicated[df_deduplicated[group_by_column] == group_value]
                 
                 scatter_kwargs = {
                     'x': group_data[x_column],
@@ -438,7 +447,7 @@ class ReportEngine:
                     'marker': dict(color=COLOR_PALETTE[i % len(COLOR_PALETTE)])
                 }
                 
-                if size_column and size_column in df.columns:
+                if size_column and size_column in df_deduplicated.columns:
                     scatter_kwargs['marker']['size'] = group_data[size_column]
                     scatter_kwargs['marker']['sizemode'] = 'diameter'
                     scatter_kwargs['marker']['sizeref'] = 2. * max(group_data[size_column]) / (40.**2)
@@ -447,22 +456,22 @@ class ReportEngine:
                 fig.add_trace(go.Scatter(**scatter_kwargs))
         else:
             scatter_kwargs = {
-                'x': df[x_column],
-                'y': df[y_column],
+                'x': df_deduplicated[x_column],
+                'y': df_deduplicated[y_column],
                 'mode': 'markers',
                 'marker': dict(color=COLOR_PALETTE[0])
             }
             
-            if size_column and size_column in df.columns:
-                scatter_kwargs['marker']['size'] = df[size_column]
+            if size_column and size_column in df_deduplicated.columns:
+                scatter_kwargs['marker']['size'] = df_deduplicated[size_column]
                 scatter_kwargs['marker']['sizemode'] = 'diameter'
-                scatter_kwargs['marker']['sizeref'] = 2. * max(df[size_column]) / (40.**2)
+                scatter_kwargs['marker']['sizeref'] = 2. * max(df_deduplicated[size_column]) / (40.**2)
                 scatter_kwargs['marker']['sizemin'] = 4
             
             fig.add_trace(go.Scatter(**scatter_kwargs))
         
         fig.update_layout(
-            title=f"{y_column} vs {x_column}",
+            title=f"{y_column} vs {x_column} (Most Recent Snapshots)",
             xaxis_title=x_column,
             yaxis_title=y_column,
             template=CHART_THEME,
@@ -529,10 +538,13 @@ class ReportEngine:
         """Generate correlation heatmap."""
         selected_columns = config.get('selected_columns', [])
         
+        # Use most recent snapshots to avoid double counting opportunities
+        df_deduplicated = self._get_most_recent_snapshots(df)
+        
         # Filter to numerical columns only
         numerical_columns = []
-        for col in df.columns:
-            if pd.api.types.is_numeric_dtype(df[col]):
+        for col in df_deduplicated.columns:
+            if pd.api.types.is_numeric_dtype(df_deduplicated[col]):
                 if not selected_columns or col in selected_columns:
                     numerical_columns.append(col)
         
@@ -540,7 +552,7 @@ class ReportEngine:
             raise ValueError("At least 2 numerical columns are required for correlation analysis")
         
         # Calculate correlation matrix
-        corr_matrix = df[numerical_columns].corr()
+        corr_matrix = df_deduplicated[numerical_columns].corr()
         
         # Create heatmap
         fig = go.Figure(data=go.Heatmap(
@@ -556,7 +568,7 @@ class ReportEngine:
         ))
         
         fig.update_layout(
-            title="Correlation Matrix",
+            title="Correlation Matrix (Most Recent Snapshots)",
             template=CHART_THEME,
             height=CHART_HEIGHT,
             width=CHART_HEIGHT  # Make it square
@@ -576,13 +588,16 @@ class ReportEngine:
         if not y_column or y_column not in df.columns:
             raise ValueError("Y-axis column not specified or not found")
         
+        # Use most recent snapshots to avoid double counting opportunities
+        df_deduplicated = self._get_most_recent_snapshots(df)
+        
         fig = go.Figure()
         
-        for i, category in enumerate(df[x_column].unique()):
+        for i, category in enumerate(df_deduplicated[x_column].unique()):
             if pd.isna(category):
                 continue
             
-            category_data = df[df[x_column] == category][y_column].dropna()
+            category_data = df_deduplicated[df_deduplicated[x_column] == category][y_column].dropna()
             
             fig.add_trace(go.Box(
                 y=category_data,
@@ -591,7 +606,7 @@ class ReportEngine:
             ))
         
         fig.update_layout(
-            title=f"Distribution of {y_column} by {x_column}",
+            title=f"Distribution of {y_column} by {x_column} (Most Recent Snapshots)",
             xaxis_title=x_column,
             yaxis_title=y_column,
             template=CHART_THEME,
@@ -682,4 +697,70 @@ class ReportEngine:
         note += f"({sensitivity} sensitivity) on: {', '.join(columns)}"
         
         return note
+    
+    def _get_most_recent_snapshots(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Get the most recent snapshot for each opportunity ID to avoid double counting.
+        
+        Args:
+            df: DataFrame with potentially multiple snapshots per opportunity
+            
+        Returns:
+            DataFrame with only the most recent snapshot for each opportunity
+        """
+        from config.settings import ID_COLUMN, SNAPSHOT_DATE_COLUMN
+        
+        # Find ID and date columns (case-insensitive)
+        id_col = None
+        date_col = None
+        
+        for col in df.columns:
+            if col.lower() == ID_COLUMN.lower():
+                id_col = col
+            elif col.lower() == SNAPSHOT_DATE_COLUMN.lower():
+                date_col = col
+        
+        # If we don't have both ID and date columns, return original DataFrame
+        if not id_col or not date_col:
+            st.info("Note: Could not identify ID and Snapshot Date columns for deduplication. Using all records.")
+            return df
+        
+        try:
+            # Ensure date column is datetime
+            df_temp = df.copy()
+            if not pd.api.types.is_datetime64_any_dtype(df_temp[date_col]):
+                df_temp[date_col] = pd.to_datetime(df_temp[date_col], errors='coerce')
+            
+            # Remove rows where we couldn't parse the date or ID is missing
+            clean_df = df_temp.dropna(subset=[id_col, date_col])
+            
+            if clean_df.empty:
+                return df
+            
+            # Get the index of the most recent snapshot for each opportunity
+            most_recent_idx = clean_df.groupby(id_col)[date_col].idxmax()
+            
+            # Handle any NaN indices (shouldn't happen with clean data, but safety check)
+            valid_indices = most_recent_idx.dropna()
+            
+            if valid_indices.empty:
+                return df
+            
+            # Return only the most recent snapshots
+            most_recent_df = df.loc[valid_indices]
+            
+            # Add informational message about deduplication
+            original_count = len(df)
+            deduplicated_count = len(most_recent_df)
+            unique_opportunities = len(valid_indices)
+            
+            if original_count != deduplicated_count:
+                st.info(f"📊 Deduplication applied: Using {deduplicated_count:,} most recent snapshots "
+                       f"from {original_count:,} total records ({unique_opportunities:,} unique opportunities)")
+            
+            return most_recent_df
+            
+        except Exception as e:
+            st.warning(f"Error during deduplication: {str(e)}. Using all records.")
+            return df
 
