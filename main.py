@@ -26,6 +26,32 @@ from core.outlier_manager import OutlierManager
 from utils.export_utils import ExportManager
 from utils.data_types import DataType
 
+
+def create_auto_sized_dataframe_config(df: pd.DataFrame, min_width: int = 80, max_width: int = 300) -> Dict[str, Any]:
+    """
+    Create column configuration for Streamlit dataframes with auto-sized columns.
+    
+    Args:
+        df: DataFrame to configure
+        min_width: Minimum column width in pixels
+        max_width: Maximum column width in pixels
+        
+    Returns:
+        Dictionary of column configurations for st.dataframe
+    """
+    column_config = {}
+    for col in df.columns:
+        # Calculate max width needed for this column
+        max_content_length = max(
+            len(str(col)),  # Column name length
+            df[col].astype(str).str.len().max() if not df[col].empty else 0
+        )
+        # Set width with some padding (8px per character + base padding)
+        width = min(max(max_content_length * 8 + 20, min_width), max_width)
+        column_config[col] = st.column_config.Column(width=width)
+    
+    return column_config
+
 # Initialize session state
 def initialize_session_state():
     """Initialize Streamlit session state variables."""
@@ -446,7 +472,15 @@ def render_reports_section():
                 
                 if data_table is not None:
                     st.subheader("📋 Report Data")
-                    st.dataframe(data_table, use_container_width=True)
+                    
+                    # Configure column widths based on content
+                    column_config = create_auto_sized_dataframe_config(data_table, min_width=100, max_width=300)
+                    
+                    st.dataframe(
+                        data_table, 
+                        use_container_width=True,
+                        column_config=column_config
+                    )
                     
                     # Add download button for the data
                     csv_data = st.session_state.export_manager.export_data_to_csv(
@@ -518,18 +552,24 @@ def render_data_preview():
         show_all_columns = st.checkbox("Show all columns", value=False)
     
     # Display data
-    if show_all_columns:
-        st.dataframe(st.session_state.current_df.head(preview_rows), use_container_width=True)
-    else:
+    preview_df = st.session_state.current_df.head(preview_rows)
+    
+    if not show_all_columns and len(st.session_state.current_df.columns) > 10:
         # Show first 10 columns
         display_columns = list(st.session_state.current_df.columns)[:10]
-        st.dataframe(
-            st.session_state.current_df[display_columns].head(preview_rows), 
-            use_container_width=True
-        )
-        
-        if len(st.session_state.current_df.columns) > 10:
-            st.caption(f"Showing 10 of {len(st.session_state.current_df.columns)} columns. Check 'Show all columns' to see more.")
+        preview_df = preview_df[display_columns]
+    
+    # Configure column widths based on content
+    column_config = create_auto_sized_dataframe_config(preview_df, min_width=80, max_width=250)
+    
+    st.dataframe(
+        preview_df, 
+        use_container_width=True,
+        column_config=column_config
+    )
+    
+    if not show_all_columns and len(st.session_state.current_df.columns) > 10:
+        st.caption(f"Showing 10 of {len(st.session_state.current_df.columns)} columns. Check 'Show all columns' to see more.")
 
 def main():
     """Main application function."""

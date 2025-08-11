@@ -526,7 +526,19 @@ class OutlierManager:
                         'Percentage': f"{col_info['outlier_percentage']:.1f}%"
                     })
                 
-                st.dataframe(pd.DataFrame(breakdown_data), use_container_width=True)
+                breakdown_df = pd.DataFrame(breakdown_data)
+                
+                # Configure column widths based on content
+                column_config = {}
+                for col in breakdown_df.columns:
+                    max_content_length = max(
+                        len(str(col)),
+                        breakdown_df[col].astype(str).str.len().max() if not breakdown_df[col].empty else 0
+                    )
+                    width = min(max(max_content_length * 8 + 20, 100), 200)
+                    column_config[col] = st.column_config.Column(width=width)
+                
+                st.dataframe(breakdown_df, use_container_width=True, column_config=column_config)
         
         return {
             'outliers_enabled': global_enable and len(enabled_columns) > 0,
