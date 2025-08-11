@@ -216,16 +216,33 @@ class FeatureEngine:
         if not id_col or not date_col:
             return df
         
-        # Calculate min and max dates for each ID
-        date_stats = df.groupby(id_col)[date_col].agg(['min', 'max']).reset_index()
-        date_stats['days_in_pipeline'] = (date_stats['max'] - date_stats['min']).dt.days
+        # Remove rows with NaN in critical columns
+        clean_df = df[[id_col, date_col]].dropna()
         
-        # Merge back to original DataFrame
-        df = df.merge(
-            date_stats[[id_col, 'days_in_pipeline']], 
-            on=id_col, 
-            how='left'
-        )
+        if clean_df.empty:
+            df['days_in_pipeline'] = np.nan
+            return df
+        
+        try:
+            # Calculate min and max dates for each ID
+            date_stats = clean_df.groupby(id_col)[date_col].agg(['min', 'max']).reset_index()
+            
+            # Calculate days, handling any remaining NaN values
+            date_stats['days_in_pipeline'] = (date_stats['max'] - date_stats['min']).dt.days
+            
+            # Replace any infinite or invalid values with NaN
+            date_stats['days_in_pipeline'] = date_stats['days_in_pipeline'].replace([np.inf, -np.inf], np.nan)
+            
+            # Merge back to original DataFrame
+            df = df.merge(
+                date_stats[[id_col, 'days_in_pipeline']], 
+                on=id_col, 
+                how='left'
+            )
+            
+        except Exception as e:
+            st.warning(f"Error calculating days in pipeline: {str(e)}")
+            df['days_in_pipeline'] = np.nan
         
         return df
     
@@ -236,31 +253,48 @@ class FeatureEngine:
         stage_col = self._find_column(df, "Stage")
         
         if not id_col or not date_col or not stage_col:
+            df['days_to_close_won'] = np.nan
             return df
         
-        # Find first snapshot date for each ID
-        first_dates = df.groupby(id_col)[date_col].min().reset_index()
-        first_dates.columns = [id_col, 'first_date']
-        
-        # Find Closed - WON date for each ID
-        won_records = df[df[stage_col] == "Closed - WON"].copy()
-        if not won_records.empty:
-            won_dates = won_records.groupby(id_col)[date_col].min().reset_index()
-            won_dates.columns = [id_col, 'won_date']
+        try:
+            # Remove rows with NaN in critical columns
+            clean_df = df[[id_col, date_col, stage_col]].dropna()
             
-            # Merge and calculate days
-            time_to_won = first_dates.merge(won_dates, on=id_col, how='inner')
-            time_to_won['days_to_close_won'] = (
-                time_to_won['won_date'] - time_to_won['first_date']
-            ).dt.days
+            if clean_df.empty:
+                df['days_to_close_won'] = np.nan
+                return df
             
-            # Merge back to original DataFrame
-            df = df.merge(
-                time_to_won[[id_col, 'days_to_close_won']], 
-                on=id_col, 
-                how='left'
-            )
-        else:
+            # Find first snapshot date for each ID
+            first_dates = clean_df.groupby(id_col)[date_col].min().reset_index()
+            first_dates.columns = [id_col, 'first_date']
+            
+            # Find Closed - WON date for each ID
+            won_records = clean_df[clean_df[stage_col] == "Closed - WON"].copy()
+            
+            if not won_records.empty:
+                won_dates = won_records.groupby(id_col)[date_col].min().reset_index()
+                won_dates.columns = [id_col, 'won_date']
+                
+                # Merge and calculate days
+                time_to_won = first_dates.merge(won_dates, on=id_col, how='inner')
+                time_to_won['days_to_close_won'] = (
+                    time_to_won['won_date'] - time_to_won['first_date']
+                ).dt.days
+                
+                # Replace any infinite or invalid values with NaN
+                time_to_won['days_to_close_won'] = time_to_won['days_to_close_won'].replace([np.inf, -np.inf], np.nan)
+                
+                # Merge back to original DataFrame
+                df = df.merge(
+                    time_to_won[[id_col, 'days_to_close_won']], 
+                    on=id_col, 
+                    how='left'
+                )
+            else:
+                df['days_to_close_won'] = np.nan
+                
+        except Exception as e:
+            st.warning(f"Error calculating days to close won: {str(e)}")
             df['days_to_close_won'] = np.nan
         
         return df
@@ -274,13 +308,34 @@ class FeatureEngine:
         if not id_col or not date_col or not stage_col:
             return df
         
-        # Find the earliest record for each ID
-        earliest_records = df.loc[df.groupby(id_col)[date_col].idxmin()]
-        starting_stages = earliest_records[[id_col, stage_col]].copy()
-        starting_stages.columns = [id_col, 'starting_stage']
+        # Remove rows with NaN in critical columns
+        clean_df = df[[id_col, date_col, stage_col]].dropna()
         
-        # Merge back to original DataFrame
-        df = df.merge(starting_stages, on=id_col, how='left')
+        if clean_df.empty:
+            df['starting_stage'] = np.nan
+            return df
+        
+        try:
+            # Find the earliest record for each ID
+            earliest_indices = clean_df.groupby(id_col)[date_col].idxmin()
+            
+            # Handle case where idxmin returns NaN (shouldn't happen with clean data, but safety check)
+            valid_indices = earliest_indices.dropna()
+            
+            if valid_indices.empty:
+                df['starting_stage'] = np.nan
+                return df
+            
+            earliest_records = clean_df.loc[valid_indices]
+            starting_stages = earliest_records[[id_col, stage_col]].copy()
+            starting_stages.columns = [id_col, 'starting_stage']
+            
+            # Merge back to original DataFrame
+            df = df.merge(starting_stages, on=id_col, how='left')
+            
+        except Exception as e:
+            st.warning(f"Error calculating starting stage: {str(e)}")
+            df['starting_stage'] = np.nan
         
         return df
     
@@ -293,13 +348,34 @@ class FeatureEngine:
         if not id_col or not date_col or not stage_col:
             return df
         
-        # Find the latest record for each ID
-        latest_records = df.loc[df.groupby(id_col)[date_col].idxmax()]
-        final_stages = latest_records[[id_col, stage_col]].copy()
-        final_stages.columns = [id_col, 'final_stage']
+        # Remove rows with NaN in critical columns
+        clean_df = df[[id_col, date_col, stage_col]].dropna()
         
-        # Merge back to original DataFrame
-        df = df.merge(final_stages, on=id_col, how='left')
+        if clean_df.empty:
+            df['final_stage'] = np.nan
+            return df
+        
+        try:
+            # Find the latest record for each ID
+            latest_indices = clean_df.groupby(id_col)[date_col].idxmax()
+            
+            # Handle case where idxmax returns NaN
+            valid_indices = latest_indices.dropna()
+            
+            if valid_indices.empty:
+                df['final_stage'] = np.nan
+                return df
+            
+            latest_records = clean_df.loc[valid_indices]
+            final_stages = latest_records[[id_col, stage_col]].copy()
+            final_stages.columns = [id_col, 'final_stage']
+            
+            # Merge back to original DataFrame
+            df = df.merge(final_stages, on=id_col, how='left')
+            
+        except Exception as e:
+            st.warning(f"Error calculating final stage: {str(e)}")
+            df['final_stage'] = np.nan
         
         return df
     
@@ -316,32 +392,44 @@ class FeatureEngine:
                 break
         
         if not id_col or not stage_col or not owner_col:
+            df['user_win_rate'] = np.nan
             return df
         
-        # Get final stage for each opportunity
-        df_temp = self._calculate_final_stage(df)
-        
-        # Calculate win rates by owner
-        final_stages = df_temp[[id_col, owner_col, 'final_stage']].drop_duplicates(subset=[id_col])
-        
-        win_rates = []
-        for owner in final_stages[owner_col].unique():
-            if pd.isna(owner):
-                continue
+        try:
+            # Get final stage for each opportunity (this handles NaN internally)
+            df_temp = self._calculate_final_stage(df.copy())
             
-            owner_opps = final_stages[final_stages[owner_col] == owner]
-            total_closed = len(owner_opps[owner_opps['final_stage'].isin(['Closed - WON', 'Closed - LOST'])])
-            won_count = len(owner_opps[owner_opps['final_stage'] == 'Closed - WON'])
+            # Remove rows with NaN in critical columns
+            clean_final_stages = df_temp[[id_col, owner_col, 'final_stage']].dropna()
             
-            win_rate = (won_count / total_closed * 100) if total_closed > 0 else 0
-            win_rates.append({owner_col: owner, 'user_win_rate': win_rate})
-        
-        win_rate_df = pd.DataFrame(win_rates)
-        
-        # Merge back to original DataFrame
-        if not win_rate_df.empty:
-            df = df.merge(win_rate_df, on=owner_col, how='left')
-        else:
+            if clean_final_stages.empty:
+                df['user_win_rate'] = np.nan
+                return df
+            
+            # Get unique opportunities only
+            final_stages = clean_final_stages.drop_duplicates(subset=[id_col])
+            
+            win_rates = []
+            for owner in final_stages[owner_col].unique():
+                if pd.isna(owner) or str(owner).strip() == '':
+                    continue
+                
+                owner_opps = final_stages[final_stages[owner_col] == owner]
+                total_closed = len(owner_opps[owner_opps['final_stage'].isin(['Closed - WON', 'Closed - LOST'])])
+                won_count = len(owner_opps[owner_opps['final_stage'] == 'Closed - WON'])
+                
+                win_rate = (won_count / total_closed * 100) if total_closed > 0 else 0
+                win_rates.append({owner_col: owner, 'user_win_rate': win_rate})
+            
+            # Merge back to original DataFrame
+            if win_rates:
+                win_rate_df = pd.DataFrame(win_rates)
+                df = df.merge(win_rate_df, on=owner_col, how='left')
+            else:
+                df['user_win_rate'] = np.nan
+                
+        except Exception as e:
+            st.warning(f"Error calculating user win rate: {str(e)}")
             df['user_win_rate'] = np.nan
         
         return df
@@ -359,43 +447,61 @@ class FeatureEngine:
                 break
         
         if not id_col or not date_col or not owner_col:
+            df['user_activity_rating'] = 'Unknown'
             return df
         
-        # Get unique opportunities per user per month
-        df_temp = df.copy()
-        df_temp['year_month'] = df_temp[date_col].dt.to_period('M')
-        
-        monthly_activity = (
-            df_temp.groupby([owner_col, 'year_month'])[id_col]
-            .nunique()
-            .reset_index()
-            .groupby(owner_col)[id_col]
-            .mean()
-            .reset_index()
-        )
-        monthly_activity.columns = [owner_col, 'avg_monthly_opps']
-        
-        # Calculate terciles for rating
-        if len(monthly_activity) > 0:
-            terciles = monthly_activity['avg_monthly_opps'].quantile([0.33, 0.67]).values
+        try:
+            # Remove rows with NaN in critical columns
+            clean_df = df[[id_col, date_col, owner_col]].dropna()
             
-            def get_rating(avg_opps):
-                if avg_opps <= terciles[0]:
-                    return 'Low'
-                elif avg_opps <= terciles[1]:
-                    return 'Medium'
-                else:
-                    return 'High'
+            if clean_df.empty:
+                df['user_activity_rating'] = 'Unknown'
+                return df
             
-            monthly_activity['user_activity_rating'] = monthly_activity['avg_monthly_opps'].apply(get_rating)
+            # Get unique opportunities per user per month
+            df_temp = clean_df.copy()
+            df_temp['year_month'] = df_temp[date_col].dt.to_period('M')
             
-            # Merge back to original DataFrame
-            df = df.merge(
-                monthly_activity[[owner_col, 'user_activity_rating']], 
-                on=owner_col, 
-                how='left'
+            monthly_activity = (
+                df_temp.groupby([owner_col, 'year_month'])[id_col]
+                .nunique()
+                .reset_index()
+                .groupby(owner_col)[id_col]
+                .mean()
+                .reset_index()
             )
-        else:
+            monthly_activity.columns = [owner_col, 'avg_monthly_opps']
+            
+            # Calculate terciles for rating
+            if len(monthly_activity) > 2:  # Need at least 3 users for terciles
+                terciles = monthly_activity['avg_monthly_opps'].quantile([0.33, 0.67]).values
+                
+                def get_rating(avg_opps):
+                    if pd.isna(avg_opps):
+                        return 'Unknown'
+                    elif avg_opps <= terciles[0]:
+                        return 'Low'
+                    elif avg_opps <= terciles[1]:
+                        return 'Medium'
+                    else:
+                        return 'High'
+                
+                monthly_activity['user_activity_rating'] = monthly_activity['avg_monthly_opps'].apply(get_rating)
+                
+                # Merge back to original DataFrame
+                df = df.merge(
+                    monthly_activity[[owner_col, 'user_activity_rating']], 
+                    on=owner_col, 
+                    how='left'
+                )
+                
+                # Fill any remaining NaN values
+                df['user_activity_rating'] = df['user_activity_rating'].fillna('Unknown')
+            else:
+                df['user_activity_rating'] = 'Unknown'
+                
+        except Exception as e:
+            st.warning(f"Error calculating user activity rating: {str(e)}")
             df['user_activity_rating'] = 'Unknown'
         
         return df
@@ -407,34 +513,71 @@ class FeatureEngine:
         stage_col = self._find_column(df, "Stage")
         
         if not id_col or not date_col or not stage_col:
+            df['days_in_current_stage'] = np.nan
             return df
         
-        # Sort by ID and date
-        df_sorted = df.sort_values([id_col, date_col])
-        
-        # Calculate time in current stage for each record
-        time_in_stage = []
-        
-        for opp_id in df_sorted[id_col].unique():
-            opp_data = df_sorted[df_sorted[id_col] == opp_id].copy()
+        try:
+            # Initialize the column with NaN
+            df['days_in_current_stage'] = np.nan
             
-            for i, (idx, row) in enumerate(opp_data.iterrows()):
-                if i == 0:
-                    # First record - time in stage is 0
-                    time_in_stage.append({'index': idx, 'days_in_current_stage': 0})
-                else:
-                    prev_row = opp_data.iloc[i-1]
-                    if row[stage_col] == prev_row[stage_col]:
-                        # Same stage - calculate days since previous snapshot
-                        days = (row[date_col] - prev_row[date_col]).days
-                        time_in_stage.append({'index': idx, 'days_in_current_stage': days})
-                    else:
-                        # Stage changed - reset to 0
+            # Remove rows with NaN in critical columns for processing
+            clean_df = df[[id_col, date_col, stage_col]].dropna()
+            
+            if clean_df.empty:
+                return df
+            
+            # Sort by ID and date
+            df_sorted = df.sort_values([id_col, date_col])
+            
+            # Calculate time in current stage for each record
+            time_in_stage = []
+            
+            for opp_id in df_sorted[id_col].unique():
+                if pd.isna(opp_id):
+                    continue
+                    
+                opp_data = df_sorted[df_sorted[id_col] == opp_id].copy()
+                
+                # Skip if no valid data for this opportunity
+                if opp_data[[date_col, stage_col]].isna().all(axis=1).all():
+                    continue
+                
+                for i, (idx, row) in enumerate(opp_data.iterrows()):
+                    # Skip if critical data is missing
+                    if pd.isna(row[date_col]) or pd.isna(row[stage_col]):
+                        time_in_stage.append({'index': idx, 'days_in_current_stage': np.nan})
+                        continue
+                    
+                    if i == 0:
+                        # First record - time in stage is 0
                         time_in_stage.append({'index': idx, 'days_in_current_stage': 0})
-        
-        # Convert to DataFrame and merge
-        time_df = pd.DataFrame(time_in_stage).set_index('index')
-        df.loc[time_df.index, 'days_in_current_stage'] = time_df['days_in_current_stage']
+                    else:
+                        prev_row = opp_data.iloc[i-1]
+                        
+                        # Skip if previous row has missing data
+                        if pd.isna(prev_row[date_col]) or pd.isna(prev_row[stage_col]):
+                            time_in_stage.append({'index': idx, 'days_in_current_stage': np.nan})
+                            continue
+                        
+                        if row[stage_col] == prev_row[stage_col]:
+                            # Same stage - calculate days since previous snapshot
+                            try:
+                                days = (row[date_col] - prev_row[date_col]).days
+                                time_in_stage.append({'index': idx, 'days_in_current_stage': max(0, days)})
+                            except:
+                                time_in_stage.append({'index': idx, 'days_in_current_stage': np.nan})
+                        else:
+                            # Stage changed - reset to 0
+                            time_in_stage.append({'index': idx, 'days_in_current_stage': 0})
+            
+            # Convert to DataFrame and merge
+            if time_in_stage:
+                time_df = pd.DataFrame(time_in_stage).set_index('index')
+                df.loc[time_df.index, 'days_in_current_stage'] = time_df['days_in_current_stage']
+                
+        except Exception as e:
+            st.warning(f"Error calculating time in stages: {str(e)}")
+            df['days_in_current_stage'] = np.nan
         
         return df
     
@@ -444,18 +587,36 @@ class FeatureEngine:
         date_col = self._find_column(df, SNAPSHOT_DATE_COLUMN)
         
         if not id_col or not date_col:
+            df['opportunity_age_days'] = np.nan
             return df
         
-        # Find first date for each opportunity
-        first_dates = df.groupby(id_col)[date_col].min().reset_index()
-        first_dates.columns = [id_col, 'first_snapshot_date']
-        
-        # Merge back and calculate age
-        df = df.merge(first_dates, on=id_col, how='left')
-        df['opportunity_age_days'] = (df[date_col] - df['first_snapshot_date']).dt.days
-        
-        # Clean up temporary column
-        df = df.drop('first_snapshot_date', axis=1)
+        try:
+            # Remove rows with NaN in critical columns
+            clean_df = df[[id_col, date_col]].dropna()
+            
+            if clean_df.empty:
+                df['opportunity_age_days'] = np.nan
+                return df
+            
+            # Find first date for each opportunity
+            first_dates = clean_df.groupby(id_col)[date_col].min().reset_index()
+            first_dates.columns = [id_col, 'first_snapshot_date']
+            
+            # Merge back and calculate age
+            df = df.merge(first_dates, on=id_col, how='left')
+            
+            # Calculate age, handling NaN values
+            df['opportunity_age_days'] = (df[date_col] - df['first_snapshot_date']).dt.days
+            
+            # Replace any infinite or invalid values with NaN
+            df['opportunity_age_days'] = df['opportunity_age_days'].replace([np.inf, -np.inf], np.nan)
+            
+            # Clean up temporary column
+            df = df.drop('first_snapshot_date', axis=1)
+            
+        except Exception as e:
+            st.warning(f"Error calculating opportunity age: {str(e)}")
+            df['opportunity_age_days'] = np.nan
         
         return df
     
@@ -465,18 +626,31 @@ class FeatureEngine:
         stage_col = self._find_column(df, "Stage")
         
         if not id_col or not stage_col:
+            df['stage_progression_count'] = np.nan
             return df
         
-        # Count unique stages per opportunity
-        stage_counts = (
-            df.groupby(id_col)[stage_col]
-            .nunique()
-            .reset_index()
-        )
-        stage_counts.columns = [id_col, 'stage_progression_count']
-        
-        # Merge back to original DataFrame
-        df = df.merge(stage_counts, on=id_col, how='left')
+        try:
+            # Remove rows with NaN in critical columns
+            clean_df = df[[id_col, stage_col]].dropna()
+            
+            if clean_df.empty:
+                df['stage_progression_count'] = np.nan
+                return df
+            
+            # Count unique stages per opportunity
+            stage_counts = (
+                clean_df.groupby(id_col)[stage_col]
+                .nunique()
+                .reset_index()
+            )
+            stage_counts.columns = [id_col, 'stage_progression_count']
+            
+            # Merge back to original DataFrame
+            df = df.merge(stage_counts, on=id_col, how='left')
+            
+        except Exception as e:
+            st.warning(f"Error calculating stage progression count: {str(e)}")
+            df['stage_progression_count'] = np.nan
         
         return df
     
