@@ -146,7 +146,8 @@ class ReportEngine:
         ]
     
     def generate_report(self, report_type: str, df: pd.DataFrame, 
-                       config: Dict[str, Any]) -> Tuple[Optional[go.Figure], Optional[pd.DataFrame]]:
+                       config: Dict[str, Any], 
+                       exclusion_info: Optional[Dict[str, Any]] = None) -> Tuple[Optional[go.Figure], Optional[pd.DataFrame]]:
         """
         Generate a report of the specified type.
         
@@ -168,7 +169,28 @@ class ReportEngine:
         
         try:
             report_function = self.available_reports[report_type]['function']
-            return report_function(df, config)
+            figure, data_table = report_function(df, config)
+            
+            # Add outlier exclusion notes to charts
+            if figure is not None and exclusion_info is not None and exclusion_info.get('outliers_excluded', False):
+                exclusion_note = self._get_exclusion_note(exclusion_info)
+                figure.add_annotation(
+                    text=exclusion_note,
+                    xref="paper", yref="paper",
+                    x=0.02, y=-0.1,
+                    showarrow=False,
+                    font=dict(size=10, color="gray"),
+                    align="left",
+                    bgcolor="rgba(255,255,255,0.8)",
+                    bordercolor="gray",
+                    borderwidth=1
+                )
+                
+                # Adjust layout to make room for annotation
+                figure.update_layout(margin=dict(b=100))
+            
+            return figure, data_table
+            
         except Exception as e:
             st.error(f"Error generating {report_type}: {str(e)}")
             return None, None
@@ -636,4 +658,28 @@ class ReportEngine:
         )
         
         return fig, None
+    
+    def _get_exclusion_note(self, exclusion_info: Dict[str, Any]) -> str:
+        """
+        Generate a note about outlier exclusion for charts.
+        
+        Args:
+            exclusion_info: Information about outlier exclusion
+            
+        Returns:
+            String note about exclusion
+        """
+        if not exclusion_info.get('outliers_excluded', False):
+            return ""
+        
+        excluded_rows = exclusion_info['excluded_rows']
+        percentage = exclusion_info['exclusion_percentage']
+        columns = exclusion_info['excluded_columns']
+        method = exclusion_info['detection_info']['method'].replace('_', ' ').title()
+        sensitivity = exclusion_info['detection_info']['sensitivity'].replace('_', ' ').title()
+        
+        note = f"Note: {excluded_rows:,} outlier rows ({percentage:.1f}%) excluded using {method} method "
+        note += f"({sensitivity} sensitivity) on: {', '.join(columns)}"
+        
+        return note
 

@@ -156,7 +156,8 @@ class ExportManager:
                 st.error(f"Error creating SVG export: {str(e)}")
     
     def create_summary_report(self, df: pd.DataFrame, filter_summary: Dict[str, str], 
-                             column_info: Dict[str, Dict[str, Any]]) -> str:
+                             column_info: Dict[str, Dict[str, Any]], 
+                             exclusion_info: Optional[Dict[str, Any]] = None) -> str:
         """
         Create a text summary report of the current analysis.
         
@@ -187,6 +188,22 @@ Generated on: {timestamp}
                 report += f"- {column}: {summary}\n"
         else:
             report += "- No filters applied\n"
+        
+        ## Outlier Exclusion
+        report += "\n## Outlier Exclusion\n"
+        
+        if exclusion_info and exclusion_info.get('outliers_excluded', False):
+            report += f"- Outliers excluded: {exclusion_info['excluded_rows']:,} rows ({exclusion_info['exclusion_percentage']:.1f}%)\n"
+            report += f"- Detection method: {exclusion_info['detection_info']['method'].replace('_', ' ').title()}\n"
+            report += f"- Sensitivity level: {exclusion_info['detection_info']['sensitivity'].replace('_', ' ').title()}\n"
+            report += f"- Columns analyzed: {', '.join(exclusion_info['excluded_columns'])}\n"
+            report += f"- Combination method: {exclusion_info['combination_method']}\n"
+            
+            # Per-column details
+            for col, col_info in exclusion_info['detection_info']['column_results'].items():
+                report += f"  - {col}: {col_info['outlier_count']} outliers ({col_info['outlier_percentage']:.1f}%)\n"
+        else:
+            report += "- No outlier exclusion applied\n"
         
         report += "\n## Column Information\n"
         
@@ -227,7 +244,8 @@ Generated on: {timestamp}
         return report
     
     def create_summary_download_button(self, df: pd.DataFrame, filter_summary: Dict[str, str], 
-                                     column_info: Dict[str, Dict[str, Any]]) -> None:
+                                     column_info: Dict[str, Dict[str, Any]], 
+                                     exclusion_info: Optional[Dict[str, Any]] = None) -> None:
         """
         Create a download button for the summary report.
         
@@ -239,7 +257,7 @@ Generated on: {timestamp}
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"analysis_summary_{timestamp}.txt"
         
-        report = self.create_summary_report(df, filter_summary, column_info)
+        report = self.create_summary_report(df, filter_summary, column_info, exclusion_info)
         
         st.download_button(
             label="📋 Download Analysis Summary",

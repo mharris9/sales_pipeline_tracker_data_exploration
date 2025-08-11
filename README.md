@@ -8,6 +8,7 @@ A comprehensive Streamlit application for exploring and analyzing sales pipeline
 - **Data Import**: Support for CSV and XLSX files up to 200MB
 - **Smart Data Type Detection**: Automatically detects and converts categorical, numerical, date, text, and boolean data
 - **Advanced Filtering**: Customizable filters for every column type with various filter modes
+- **Outlier Detection & Exclusion**: Multiple algorithms with adjustable sensitivity for data cleaning
 - **Feature Engineering**: Derive new insights with calculated features
 - **Interactive Visualizations**: Multiple chart types with group-by capabilities
 - **Data Export**: Export filtered data and high-resolution charts
@@ -31,6 +32,12 @@ A comprehensive Streamlit application for exploring and analyzing sales pipeline
   - User activity rating (Low/Medium/High based on volume)
   - Time spent in each stage
   - Stage progression tracking
+
+- **Outlier Detection Methods**:
+  - Interquartile Range (IQR) - Classic statistical method
+  - Z-Score - Standard deviation based detection
+  - Modified Z-Score (MAD) - Robust median-based method
+  - Isolation Forest - Machine learning approach
 
 - **Group-By Analysis**: Group all reports by categorical columns
 - **Smart Filtering**: Context-aware filters that adapt to data types
@@ -90,7 +97,24 @@ Additional columns can contain any combination of:
 - Apply multiple filters simultaneously
 - Use "Clear All Filters" to reset
 
-### 4. Feature Engineering
+### 4. Outlier Detection & Exclusion
+- Navigate to the "Outliers" tab
+- Enable outlier detection globally
+- Select columns for outlier analysis
+- Choose detection method:
+  - **IQR (Interquartile Range)**: Best for normally distributed data
+  - **Z-Score**: Good for large datasets with normal distribution
+  - **Modified Z-Score**: Robust against extreme outliers
+  - **Isolation Forest**: Machine learning approach for complex patterns
+- Adjust sensitivity:
+  - **Conservative**: Fewer outliers detected
+  - **Moderate**: Balanced approach (default)
+  - **Aggressive**: More outliers detected
+  - **Very Aggressive**: Maximum outlier detection
+- Preview outliers before applying
+- Choose combination method for multiple columns
+
+### 5. Feature Engineering
 - Navigate to the "Features" tab
 - Select from available calculated features:
   - **days_in_pipeline**: Time between first and latest snapshot
@@ -103,7 +127,7 @@ Additional columns can contain any combination of:
   - **opportunity_age_days**: Age from first snapshot
   - **stage_progression_count**: Number of stages experienced
 
-### 5. Generating Reports
+### 6. Generating Reports
 - Navigate to the "Reports" tab
 - Select a report type
 - Choose group-by column (optional)
@@ -111,7 +135,7 @@ Additional columns can contain any combination of:
 - Set aggregation methods and other parameters
 - Click "Generate Report"
 
-### 6. Exporting Data
+### 7. Exporting Data
 - Navigate to the "Export" tab
 - Download filtered dataset as CSV
 - Download analysis summary as text

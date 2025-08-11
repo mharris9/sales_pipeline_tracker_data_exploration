@@ -22,6 +22,7 @@ from core.data_handler import DataHandler
 from core.filter_manager import FilterManager
 from core.feature_engine import FeatureEngine
 from core.report_engine import ReportEngine
+from core.outlier_manager import OutlierManager
 from utils.export_utils import ExportManager
 from utils.data_types import DataType
 
@@ -43,11 +44,20 @@ def initialize_session_state():
     if 'export_manager' not in st.session_state:
         st.session_state.export_manager = ExportManager()
     
+    if 'outlier_manager' not in st.session_state:
+        st.session_state.outlier_manager = OutlierManager()
+    
     if 'current_df' not in st.session_state:
         st.session_state.current_df = None
     
     if 'data_loaded' not in st.session_state:
         st.session_state.data_loaded = False
+    
+    if 'outlier_settings' not in st.session_state:
+        st.session_state.outlier_settings = {'outliers_enabled': False}
+    
+    if 'exclusion_info' not in st.session_state:
+        st.session_state.exclusion_info = {'outliers_excluded': False}
 
 def render_header():
     """Render the application header."""
@@ -164,12 +174,49 @@ def render_filters_section():
     if st.session_state.data_loaded:
         base_df = st.session_state.data_handler.get_data(processed=True)
         filtered_df = st.session_state.filter_manager.apply_filters(base_df)
+        
+        # Apply outlier exclusion if enabled
+        if st.session_state.outlier_settings.get('outliers_enabled', False):
+            enabled_columns = st.session_state.outlier_settings.get('enabled_columns', [])
+            combination_method = st.session_state.outlier_settings.get('combination_method', 'any')
+            
+            filtered_df, exclusion_info = st.session_state.outlier_manager.apply_outlier_exclusion(
+                filtered_df, enabled_columns, combination_method
+            )
+            st.session_state.exclusion_info = exclusion_info
+        else:
+            st.session_state.exclusion_info = {'outliers_excluded': False}
+        
         st.session_state.current_df = filtered_df
         
         # Show filter summary
         filter_summary = st.session_state.filter_manager.get_active_filters_summary()
         if filter_summary:
             st.info(f"**Active Filters:** {', '.join([f'{k}: {v}' for k, v in filter_summary.items()])}")
+        
+        # Show outlier exclusion summary
+        if st.session_state.exclusion_info.get('outliers_excluded', False):
+            exclusion_info = st.session_state.exclusion_info
+            st.warning(f"**Outliers Excluded:** {exclusion_info['excluded_rows']:,} rows "
+                      f"({exclusion_info['exclusion_percentage']:.1f}%) removed from analysis")
+
+def render_outliers_section():
+    """Render the outlier detection section."""
+    if not st.session_state.data_loaded:
+        st.info("Please load data to access outlier detection options.")
+        return
+    
+    # Get column information
+    column_types = st.session_state.data_handler.column_types
+    
+    # Render outlier detection UI
+    outlier_settings = st.session_state.outlier_manager.render_outlier_ui(
+        st.session_state.current_df, 
+        column_types
+    )
+    
+    # Update session state
+    st.session_state.outlier_settings = outlier_settings
 
 def render_features_section():
     """Render the feature engineering section."""
@@ -383,7 +430,8 @@ def render_reports_section():
                 figure, data_table = st.session_state.report_engine.generate_report(
                     selected_report,
                     st.session_state.current_df,
-                    config
+                    config,
+                    st.session_state.exclusion_info
                 )
                 
                 # Display results
@@ -440,7 +488,8 @@ def render_export_section():
         st.session_state.export_manager.create_summary_download_button(
             st.session_state.current_df,
             filter_summary,
-            column_info
+            column_info,
+            st.session_state.exclusion_info
         )
     
     with col3:
@@ -496,8 +545,9 @@ def main():
     # Main content area
     if st.session_state.data_loaded:
         # Create tabs for different sections
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "🔍 Filters", 
+            "🎯 Outliers",
             "⚙️ Features", 
             "📈 Reports", 
             "💾 Export", 
@@ -508,15 +558,18 @@ def main():
             render_filters_section()
         
         with tab2:
-            render_features_section()
+            render_outliers_section()
         
         with tab3:
-            render_reports_section()
+            render_features_section()
         
         with tab4:
-            render_export_section()
+            render_reports_section()
         
         with tab5:
+            render_export_section()
+        
+        with tab6:
             render_data_preview()
     
     else:

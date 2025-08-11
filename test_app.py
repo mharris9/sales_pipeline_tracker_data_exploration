@@ -206,6 +206,46 @@ def test_report_engine():
     
     return engine
 
+def test_outlier_manager():
+    """Test the OutlierManager class."""
+    print("\nTesting OutlierManager...")
+    
+    from core.outlier_manager import OutlierManager
+    from utils.data_types import detect_data_type, DataType
+    
+    # Create sample data with some outliers
+    df = create_sample_data(500, 50)
+    
+    # Add some artificial outliers
+    df.loc[df.index[:5], 'Deal Value'] = 10000000  # Very high values
+    df.loc[df.index[5:10], 'Probability'] = -50    # Invalid probabilities
+    
+    manager = OutlierManager()
+    
+    # Create column types
+    column_types = {}
+    for col in df.columns:
+        column_types[col] = detect_data_type(df[col], col)
+    
+    # Create outlier settings
+    manager.create_outlier_settings(df, column_types)
+    
+    print(f"✓ Created outlier settings for {len(manager.outlier_settings)} numerical columns")
+    
+    # Test outlier detection on Deal Value
+    outliers, info = manager.detect_outliers_column(df, 'Deal Value', 'iqr', 'moderate')
+    print(f"✓ Detected {outliers.sum()} outliers in Deal Value using IQR method")
+    
+    # Test multiple column detection
+    numerical_columns = ['Deal Value', 'Probability']
+    combined_outliers, combined_info = manager.detect_outliers_multiple_columns(
+        df, numerical_columns, 'iqr', 'moderate', 'any'
+    )
+    
+    print(f"✓ Combined outlier detection found {combined_outliers.sum()} outliers across {len(numerical_columns)} columns")
+    
+    return manager
+
 def main():
     """Run all tests."""
     print("🧪 Testing Sales Pipeline Data Explorer Components\n")
@@ -216,6 +256,7 @@ def main():
         engine, df_with_features = test_feature_engine()
         filter_manager = test_filter_manager()
         report_engine = test_report_engine()
+        outlier_manager = test_outlier_manager()
         
         print("\n✅ All tests passed! The application components are working correctly.")
         print("\n🚀 You can now run the main application with: streamlit run main.py")
