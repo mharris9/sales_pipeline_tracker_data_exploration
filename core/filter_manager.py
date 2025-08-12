@@ -172,76 +172,153 @@ class FilterManager:
         """Render UI for categorical filters."""
         unique_values = filter_config['unique_values']
         
+        # Initialize session state for this filter if not exists
+        state_key = f"filter_state_{column}"
+        if state_key not in st.session_state:
+            st.session_state[state_key] = {
+                'filter_type': filter_config['filter_type'],
+                'selected_values': filter_config['selected_values'].copy()
+            }
+        
         # Filter type selection
-        filter_config['filter_type'] = st.radio(
+        filter_type = st.radio(
             f"Filter type for {column}",
             ['include', 'exclude'],
-            index=0 if filter_config['filter_type'] == 'include' else 1,
+            index=0 if st.session_state[state_key]['filter_type'] == 'include' else 1,
             key=f"filter_type_{column}",
             horizontal=True
         )
+        st.session_state[state_key]['filter_type'] = filter_type
+        filter_config['filter_type'] = filter_type
         
         # Value selection
         if len(unique_values) <= 10:
             # Use checkboxes for small number of values
+            st.write("Select values to include/exclude:")
             selected_values = []
-            for value in unique_values:
-                if st.checkbox(
-                    value, 
-                    value=value in filter_config['selected_values'],
-                    key=f"filter_cat_{column}_{value}"
-                ):
-                    selected_values.append(value)
+            
+            # Create columns for better layout
+            cols = st.columns(2)
+            for i, value in enumerate(unique_values):
+                with cols[i % 2]:
+                    checkbox_key = f"filter_cat_{column}_{value}"
+                    if st.checkbox(
+                        value,
+                        value=value in st.session_state[state_key]['selected_values'],
+                        key=checkbox_key,
+                        help=f"Toggle {value} in filter"
+                    ):
+                        selected_values.append(value)
+            
+            # Update both session state and filter config
+            st.session_state[state_key]['selected_values'] = selected_values
             filter_config['selected_values'] = selected_values
+            
+            # Show summary of selected values
+            if selected_values:
+                st.caption(f"Selected: {', '.join(selected_values)}")
+            else:
+                st.caption("No values selected")
         else:
             # Use multiselect for large number of values
-            filter_config['selected_values'] = st.multiselect(
+            selected_values = st.multiselect(
                 f"Select values for {column}",
                 options=unique_values,
-                default=filter_config['selected_values'],
+                default=st.session_state[state_key]['selected_values'],
                 key=f"filter_multiselect_{column}"
             )
+            
+            # Update both session state and filter config
+            st.session_state[state_key]['selected_values'] = selected_values
+            filter_config['selected_values'] = selected_values
     
     def _render_numerical_filter_ui(self, column: str, filter_config: Dict[str, Any]) -> None:
         """Render UI for numerical filters."""
         min_val = filter_config['min_value']
         max_val = filter_config['max_value']
         
+        # Initialize session state for this filter if not exists
+        state_key = f"filter_state_{column}"
+        if state_key not in st.session_state:
+            st.session_state[state_key] = {
+                'filter_type': filter_config['filter_type'],
+                'selected_min': filter_config['selected_min'],
+                'selected_max': filter_config['selected_max']
+            }
+        
         # Filter type selection
         filter_type = st.selectbox(
             f"Filter type for {column}",
             ['range', 'greater_than', 'less_than'],
-            index=['range', 'greater_than', 'less_than'].index(filter_config['filter_type']),
+            index=['range', 'greater_than', 'less_than'].index(st.session_state[state_key]['filter_type']),
             key=f"filter_type_{column}"
         )
+        st.session_state[state_key]['filter_type'] = filter_type
         filter_config['filter_type'] = filter_type
         
         if filter_type == 'range':
-            # Range slider
-            selected_range = st.slider(
-                f"Range for {column}",
-                min_value=min_val,
-                max_value=max_val,
-                value=(filter_config['selected_min'], filter_config['selected_max']),
-                key=f"filter_range_{column}"
+            st.write("Enter exact values or use the slider:")
+            
+            # Manual number inputs in columns
+            col1, col2 = st.columns(2)
+            with col1:
+                manual_min = st.number_input(
+                    f"Min {column}",
+                    value=float(st.session_state[state_key]['selected_min']),
+                    min_value=float(min_val),
+                    max_value=float(max_val),
+                    format="%.2f",
+                    key=f"filter_range_min_{column}"
+                )
+            with col2:
+                manual_max = st.number_input(
+                    f"Max {column}",
+                    value=float(st.session_state[state_key]['selected_max']),
+                    min_value=float(min_val),
+                    max_value=float(max_val),
+                    format="%.2f",
+                    key=f"filter_range_max_{column}"
+                )
+            
+            # Update session state and config
+            st.session_state[state_key]['selected_min'] = manual_min
+            st.session_state[state_key]['selected_max'] = manual_max
+            filter_config['selected_min'] = manual_min
+            filter_config['selected_max'] = manual_max
+            
+            # Optional slider for visual reference
+            st.slider(
+                f"Visual range for {column}",
+                min_value=float(min_val),
+                max_value=float(max_val),
+                value=(float(manual_min), float(manual_max)),
+                key=f"filter_range_slider_{column}",
+                disabled=True  # Make it read-only since we're using manual inputs
             )
-            filter_config['selected_min'], filter_config['selected_max'] = selected_range
+            
         elif filter_type == 'greater_than':
-            filter_config['selected_min'] = st.number_input(
+            manual_min = st.number_input(
                 f"Greater than",
-                min_value=min_val,
-                max_value=max_val,
-                value=filter_config.get('selected_min', min_val),
+                value=float(st.session_state[state_key]['selected_min']),
+                min_value=float(min_val),
+                max_value=float(max_val),
+                format="%.2f",
                 key=f"filter_gt_{column}"
             )
+            st.session_state[state_key]['selected_min'] = manual_min
+            filter_config['selected_min'] = manual_min
+            
         elif filter_type == 'less_than':
-            filter_config['selected_max'] = st.number_input(
+            manual_max = st.number_input(
                 f"Less than",
-                min_value=min_val,
-                max_value=max_val,
-                value=filter_config.get('selected_max', max_val),
+                value=float(st.session_state[state_key]['selected_max']),
+                min_value=float(min_val),
+                max_value=float(max_val),
+                format="%.2f",
                 key=f"filter_lt_{column}"
             )
+            st.session_state[state_key]['selected_max'] = manual_max
+            filter_config['selected_max'] = manual_max
         
         # Show percentile information
         if 'percentiles' in filter_config:
@@ -354,14 +431,66 @@ class FilterManager:
             Filtered DataFrame
         """
         filtered_df = df.copy()
+        original_count = len(filtered_df)
+        
+        # Store the original DataFrame in session state
+        if 'original_df' not in st.session_state:
+            st.session_state.original_df = df.copy()
+        
+        # Apply filters sequentially and track changes
+        filter_debug_info = []
         
         for column, is_active in self.active_filters.items():
             if not is_active or column not in self.filters or column not in df.columns:
                 continue
             
             filter_config = self.filters[column]
+            pre_filter_count = len(filtered_df)
             filtered_df = self._apply_single_filter(filtered_df, column, filter_config)
+            post_filter_count = len(filtered_df)
+            
+            # Collect debug info
+            debug_info = {
+                'column': column,
+                'type': filter_config['type'],
+                'pre_count': pre_filter_count,
+                'post_count': post_filter_count,
+                'filtered_count': pre_filter_count - post_filter_count
+            }
+            
+            if filter_config['type'] == 'categorical':
+                debug_info.update({
+                    'mode': filter_config['filter_type'],
+                    'selected_values': filter_config['selected_values'],
+                    'value_counts': filtered_df[column].value_counts().to_dict()
+                })
+            
+            filter_debug_info.append(debug_info)
         
+        # Store debug info in session state
+        st.session_state.filter_debug_info = filter_debug_info
+        st.session_state.filter_summary = {
+            'original_count': original_count,
+            'filtered_count': len(filtered_df),
+            'total_filtered': original_count - len(filtered_df)
+        }
+        
+        # Display debug information
+        for info in filter_debug_info:
+            st.write(f"Filter applied to {info['column']}:")
+            st.write(f"- Filter type: {info['type']}")
+            if info['type'] == 'categorical':
+                st.write(f"- Mode: {info['mode']}")
+                st.write(f"- Selected values: {info['selected_values']}")
+            st.write(f"- Records before: {info['pre_count']}")
+            st.write(f"- Records after: {info['post_count']}")
+            st.write(f"- Records filtered: {info['filtered_count']}")
+            
+            if info['type'] == 'categorical':
+                st.write("Value counts in filtered data:")
+                st.write(pd.Series(info['value_counts']))
+        
+        st.write(f"Total records: {original_count} → {len(filtered_df)}")
         return filtered_df
     
     def _apply_single_filter(self, df: pd.DataFrame, column: str, filter_config: Dict[str, Any]) -> pd.DataFrame:
@@ -385,6 +514,11 @@ class FilterManager:
         """Apply categorical filter."""
         selected_values = filter_config['selected_values']
         filter_type = filter_config['filter_type']
+        unique_values = filter_config['unique_values']
+        
+        # If all values are selected, return the original DataFrame
+        if set(selected_values) == set(unique_values):
+            return df
         
         if not selected_values:
             return df.iloc[0:0]  # Return empty DataFrame
@@ -515,9 +649,78 @@ class FilterManager:
         return summary
     
     def clear_all_filters(self) -> None:
-        """Clear all active filters."""
+        """Clear all active filters and reset filter configurations."""
+        # Clear active states and session state
         for column in self.active_filters:
+            # Clear active state
             self.active_filters[column] = False
+            
+            # Clear checkbox state in session
+            checkbox_key = f"filter_active_{column}"
+            if checkbox_key in st.session_state:
+                st.session_state[checkbox_key] = False
+            
+            # Reset filter configurations to default
+            if column in self.filters:
+                filter_config = self.filters[column]
+                state_key = f"filter_state_{column}"
+                
+                if filter_config['type'] == 'categorical':
+                    unique_values = filter_config['unique_values']
+                    filter_config['selected_values'] = unique_values.copy()
+                    filter_config['filter_type'] = 'include'
+                    if state_key in st.session_state:
+                        st.session_state[state_key] = {
+                            'filter_type': 'include',
+                            'selected_values': unique_values.copy()
+                        }
+                elif filter_config['type'] == 'numerical':
+                    min_val = filter_config['min_value']
+                    max_val = filter_config['max_value']
+                    filter_config['selected_min'] = min_val
+                    filter_config['selected_max'] = max_val
+                    filter_config['filter_type'] = 'range'
+                    if state_key in st.session_state:
+                        st.session_state[state_key] = {
+                            'filter_type': 'range',
+                            'selected_min': min_val,
+                            'selected_max': max_val
+                        }
+                elif filter_config['type'] == 'date':
+                    min_date = filter_config['min_date']
+                    max_date = filter_config['max_date']
+                    filter_config['selected_min_date'] = min_date
+                    filter_config['selected_max_date'] = max_date
+                    filter_config['filter_type'] = 'range'
+                    if state_key in st.session_state:
+                        st.session_state[state_key] = {
+                            'filter_type': 'range',
+                            'selected_min_date': min_date,
+                            'selected_max_date': max_date
+                        }
+                elif filter_config['type'] == 'text':
+                    filter_config['search_text'] = ''
+                    filter_config['filter_type'] = 'contains'
+                    filter_config['case_sensitive'] = False
+                    if state_key in st.session_state:
+                        st.session_state[state_key] = {
+                            'filter_type': 'contains',
+                            'search_text': '',
+                            'case_sensitive': False
+                        }
+                elif filter_config['type'] == 'boolean':
+                    filter_config['selected_values'] = [True, False]
+                    filter_config['filter_type'] = 'include'
+                    if state_key in st.session_state:
+                        st.session_state[state_key] = {
+                            'filter_type': 'include',
+                            'selected_values': [True, False]
+                        }
+                        
+        # Clear any remaining filter-related session state
+        for key in list(st.session_state.keys()):
+            if key.startswith('filter_'):
+                del st.session_state[key]
     
     def get_filter_state(self) -> Dict[str, Any]:
         """Get the current filter state for serialization."""

@@ -168,6 +168,12 @@ def test_filter_manager():
     # Create sample data
     df = create_sample_data(500, 50)
     
+    # Convert date columns to datetime before detecting types
+    date_columns = ['Snapshot Date', 'Created']
+    for col in date_columns:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col])
+    
     # Detect column types
     column_types = {}
     for col in df.columns:

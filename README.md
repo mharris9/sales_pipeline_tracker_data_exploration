@@ -272,6 +272,18 @@ The application is optimized for large datasets:
 
 This project is provided as-is for data analysis purposes. Feel free to modify and extend according to your needs.
 
+## Current Development 🚧
+
+### State Management Enhancement
+We are transitioning to a centralized state management system to improve:
+- Data consistency and reliability
+- Debugging and monitoring capabilities
+- Feature extensibility
+- Performance optimization
+- Error recovery
+
+See [State Management Transition](docs/STATE_MANAGEMENT_TRANSITION.md) for details about this major enhancement.
+
 ## Future Enhancements 🔮
 
 Potential improvements and extensions:
