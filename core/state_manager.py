@@ -9,6 +9,7 @@ This module provides a flexible and extensible state management system that:
 """
 import streamlit as st
 import pandas as pd
+import numpy as np
 from typing import Dict, Any, Optional, List, Callable
 import logging
 import json
@@ -16,6 +17,7 @@ import psutil
 from datetime import datetime
 from dataclasses import dataclass, asdict
 from enum import Enum
+from utils.data_types import DataType
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -326,30 +328,56 @@ class StateManager:
         if paths:
             # Save specific paths
             for path in paths:
-                value = self.get_state(path)
-                if value is not None:
-                    # Handle special types
-                    if isinstance(value, pd.DataFrame):
-                        value = value.to_dict('records')
-                    
-                    # Get all nested paths
-                    if isinstance(value, dict):
-                        nested_paths = self._flatten_dict(value, prefix=path)
-                        for nested_path, nested_value in nested_paths.items():
-                            state_to_save[nested_path] = nested_value
-                            
-                            # Save path in metadata
-                            if '_paths' not in state_to_save:
-                                state_to_save['_paths'] = []
-                            state_to_save['_paths'].append(nested_path)
-                    else:
+                # Get all nested paths
+                flattened = self._flatten_dict(self._state[path] if path in self._state else {}, prefix=path)
+                for nested_path, value in flattened.items():
+                    try:
+                        # Handle special types
+                        if isinstance(value, pd.DataFrame):
+                            value = value.to_dict('records')
+                        elif isinstance(value, DataType):
+                            value = value.value
+                        elif isinstance(value, pd.Timestamp):
+                            value = value.isoformat()
+                        elif isinstance(value, (np.int64, np.int32, np.int16, np.int8)):
+                            value = int(value)
+                        elif isinstance(value, (np.float64, np.float32)):
+                            value = float(value)
+                        elif isinstance(value, pd.Series):
+                            value = value.tolist()
+                        elif isinstance(value, np.ndarray):
+                            value = value.tolist()
+                        elif isinstance(value, (set, frozenset)):
+                            value = list(value)
+                        elif isinstance(value, (type, object)):
+                            # Skip class instances and types
+                            continue
+                        
+                        # Ensure value is serializable
+                        json.dumps(value)
+                        
                         # Save value with full path
-                        state_to_save[path] = value
+                        state_to_save[nested_path] = value
                         
                         # Save path in metadata
                         if '_paths' not in state_to_save:
                             state_to_save['_paths'] = []
-                        state_to_save['_paths'].append(path)
+                        state_to_save['_paths'].append(nested_path)
+                    except (TypeError, OverflowError):
+                        logger.warning(f"Skipping un-serializable state at {nested_path}")
+                        
+                # Save top-level path
+                if path not in state_to_save:
+                    state_to_save[path] = {}
+                
+                # Save data_loaded state
+                if path == 'data':
+                    state_to_save['data.data_loaded'] = self._state['data'].get('data_loaded', False)
+                    
+                    # Save DataFrame as records
+                    df = self._state['data'].get('current_df')
+                    if isinstance(df, pd.DataFrame):
+                        state_to_save['data.current_df'] = df.to_dict('records')
         else:
             # Save all state
             flattened = self._flatten_dict(self._state)
@@ -411,8 +439,28 @@ class StateManager:
                 value = state_data.get(path)
                 if value is not None:
                     # Handle special types
-                    if isinstance(value, list) and path.endswith('_df'):
-                        # Convert list back to DataFrame
+                    if isinstance(value, list):
+                        if path.endswith('_df') or path.endswith('current_df'):
+                            # Convert list back to DataFrame
+                            value = pd.DataFrame(value)
+                        elif path.endswith('_series'):
+                            # Convert list back to Series
+                            value = pd.Series(value)
+                        elif path.endswith('_array'):
+                            # Convert list back to ndarray
+                            value = np.array(value)
+                    elif isinstance(value, str):
+                        if path.endswith('.type'):
+                            # Convert string back to DataType enum
+                            value = DataType(value)
+                        elif path.endswith('_date') or path.endswith('earliest') or path.endswith('latest'):
+                            # Convert ISO string back to Timestamp
+                            try:
+                                value = pd.Timestamp(value)
+                            except:
+                                pass
+                    elif isinstance(value, dict) and path.endswith('_df'):
+                        # Handle nested DataFrame
                         value = pd.DataFrame(value)
                     
                     # Update state
@@ -423,6 +471,18 @@ class StateManager:
                             current[part] = {}
                         current = current[part]
                     current[parts[-1]] = value
+                    
+                    # Handle special cases
+                    if path == 'data.data_loaded':
+                        self._state['data']['data_loaded'] = bool(value)
+                    elif path == 'data.current_df':
+                        self._state['data']['data_loaded'] = True
+                    elif path == 'data':
+                        # Ensure data_loaded is properly set
+                        if 'data_loaded' in value:
+                            self._state['data']['data_loaded'] = bool(value['data_loaded'])
+                        if 'current_df' in value:
+                            self._state['data']['data_loaded'] = True
                     
                     logger.info(f"Restored state at {path}")
         else:
@@ -694,20 +754,29 @@ class StateManager:
             if len(parts) == 1:
                 # Clear top-level path
                 if path in self._state:
-                    del self._state[path]
+                    self._state[path] = {
+                        'data_loaded': False,
+                        'current_df': None,
+                        'data_info': {},
+                        'column_types': {},
+                        'column_info': {}
+                    }
+                if path in self._instances:
+                    del self._instances[path]
             else:
                 # Clear nested path
                 current = self._state
                 for part in parts[:-1]:
                     if part not in current:
-                        return
+                        current[part] = {}
                     current = current[part]
                 if parts[-1] in current:
-                    del current[parts[-1]]
+                    current[parts[-1]] = None
             
             logger.info(f"Cleared state at {path}")
         else:
             self._initialize_state()
+            self._instances = {}
             logger.info("All state cleared")
     
     # Filter-specific methods

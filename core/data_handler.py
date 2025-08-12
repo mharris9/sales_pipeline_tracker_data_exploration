@@ -6,7 +6,10 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple, Any
 import streamlit as st
 from pathlib import Path
-import io
+from io import StringIO
+import logging
+
+logger = logging.getLogger(__name__)
 
 from config.settings import (
     DATE_FORMAT, SNAPSHOT_DATE_COLUMN, ID_COLUMN, 
@@ -24,11 +27,19 @@ class DataHandler:
     
     def __init__(self):
         """Initialize the DataHandler."""
+        # Get state manager instance
+        if not hasattr(st.session_state, 'state_manager'):
+            raise RuntimeError("StateManager not initialized")
+        self.state_manager = st.session_state.state_manager
+        
+        # Initialize state if needed
+        if not self.state_manager.get_state('data.data_info'):
+            self.state_manager.update_state('data.data_info', {})
+        
+        # Local cache for performance
         self.df_raw: Optional[pd.DataFrame] = None
         self.df_processed: Optional[pd.DataFrame] = None
         self.column_types: Dict[str, DataType] = {}
-        self.column_stats: Dict[str, Dict[str, Any]] = {}
-        self.file_info: Dict[str, Any] = {}
         
     def load_dataframe(self, df: pd.DataFrame) -> bool:
         """
@@ -41,23 +52,44 @@ class DataHandler:
             True if successful, False otherwise
         """
         try:
+            if df is None or df.empty:
+                st.error("DataFrame is empty or None")
+                return False
+            
+            # Store raw data
             self.df_raw = df.copy()
-            self.file_info = {
+            
+            # Validate required columns
+            required_columns = [ID_COLUMN, SNAPSHOT_DATE_COLUMN]
+            missing_columns = [col for col in required_columns if col not in self.df_raw.columns]
+            if missing_columns:
+                st.error(f"Missing required columns: {', '.join(missing_columns)}")
+                return False
+            
+            # Update file info
+            file_info = {
                 'name': 'test_data.csv',
                 'size': len(df),
                 'type': 'DataFrame',
                 'columns': len(df.columns)
             }
+            self.state_manager.update_state('data.data_info', file_info)
             
             # Process the data
-            self._process_data()
+            success = self._process_data()
+            if not success:
+                return False
+            
+            # Update state
+            self.state_manager.update_state('data.current_df', self.df_processed)
+            self.state_manager.update_state('data.data_loaded', True)
             
             return True
             
         except Exception as e:
             st.error(f"Error loading DataFrame: {str(e)}")
             return False
-
+    
     def load_file(self, uploaded_file) -> bool:
         """
         Load data from uploaded CSV or XLSX file.
@@ -75,30 +107,58 @@ class DataHandler:
                 return False
             
             # Store file info
-            self.file_info = {
+            file_info = {
                 'name': uploaded_file.name,
                 'size': uploaded_file.size,
                 'type': uploaded_file.type
             }
+            self.state_manager.update_state('data.data_info', file_info)
             
             # Read file based on extension
             file_extension = Path(uploaded_file.name).suffix.lower()
             
-            if file_extension == '.csv':
-                self.df_raw = pd.read_csv(uploaded_file, encoding='utf-8')
-            elif file_extension in ['.xlsx', '.xls']:
-                self.df_raw = pd.read_excel(uploaded_file)
-            else:
-                st.error(f"Unsupported file type: {file_extension}")
+            try:
+                if file_extension == '.csv':
+                    # Read content as string
+                    content = uploaded_file.read()
+                    if isinstance(content, bytes):
+                        content = content.decode('utf-8')
+                    
+                    # Create StringIO buffer
+                    buffer = StringIO(content)
+                    
+                    # Read DataFrame
+                    self.df_raw = pd.read_csv(buffer)
+                elif file_extension in ['.xlsx', '.xls']:
+                    uploaded_file.seek(0)
+                    self.df_raw = pd.read_excel(uploaded_file)
+                else:
+                    st.error(f"Unsupported file type: {file_extension}")
+                    return False
+            except Exception as e:
+                st.error(f"Error reading file: {str(e)}")
                 return False
             
             # Basic validation
-            if self.df_raw.empty:
+            if self.df_raw is None or self.df_raw.empty:
                 st.error("The uploaded file is empty.")
                 return False
             
+            # Validate required columns
+            required_columns = [ID_COLUMN, SNAPSHOT_DATE_COLUMN]
+            missing_columns = [col for col in required_columns if col not in self.df_raw.columns]
+            if missing_columns:
+                st.error(f"Missing required columns: {', '.join(missing_columns)}")
+                return False
+            
             # Process the data
-            self._process_data()
+            success = self._process_data()
+            if not success:
+                return False
+            
+            # Update state
+            self.state_manager.update_state('data.current_df', self.df_processed)
+            self.state_manager.update_state('data.data_loaded', True)
             
             st.success(f"Successfully loaded {len(self.df_raw)} rows and {len(self.df_raw.columns)} columns")
             return True
@@ -107,110 +167,71 @@ class DataHandler:
             st.error(f"Error loading file: {str(e)}")
             return False
     
-    def _process_data(self) -> None:
+    def _process_data(self) -> bool:
         """
         Process the raw data: detect types, convert formats, handle missing data.
+        
+        Returns:
+            True if successful, False otherwise
         """
-        if self.df_raw is None:
-            return
-        
-        # Create a copy for processing
-        self.df_processed = self.df_raw.copy()
-        
-        # Detect and convert data types
-        self._detect_and_convert_types()
-        
-        # Calculate statistics for each column
-        self._calculate_column_statistics()
-        
-        # Validate required columns
-        self._validate_required_columns()
-        
-        # Handle missing data
-        self._handle_missing_data()
-    
-    def _detect_and_convert_types(self) -> None:
-        """Detect and convert data types for all columns."""
-        # Don't process if dataframe is empty
-        if self.df_processed is None or self.df_processed.empty:
-            return
+        try:
+            if self.df_raw is None:
+                return False
             
-        for column in self.df_processed.columns:
-            # Detect data type
-            detected_type = detect_data_type(self.df_processed[column], column)
-            self.column_types[column] = detected_type
+            # Create a copy for processing
+            self.df_processed = self.df_raw.copy()
             
-            # Convert to proper type
-            try:
-                if detected_type == DataType.DATE:
-                    # Special handling for snapshot date column
-                    if column.lower() == SNAPSHOT_DATE_COLUMN.lower():
-                        self.df_processed[column] = pd.to_datetime(
-                            self.df_processed[column], 
-                            format=DATE_FORMAT, 
-                            errors='coerce'
-                        )
-                    else:
-                        self.df_processed[column] = pd.to_datetime(
-                            self.df_processed[column], 
-                            errors='coerce'
-                        )
-                elif detected_type == DataType.NUMERICAL:
-                    self.df_processed[column] = pd.to_numeric(
-                        self.df_processed[column], 
-                        errors='coerce'
-                    )
-                elif detected_type == DataType.CATEGORICAL:
-                    # Keep as object type but clean up
-                    self.df_processed[column] = self.df_processed[column].astype(str)
-                    self.df_processed[column] = self.df_processed[column].replace('nan', np.nan)
+            # Detect and store column types
+            self.column_types = {}
+            column_info = {}
+            
+            for column in self.df_processed.columns:
+                # Detect data type
+                data_type = detect_data_type(self.df_processed[column], column)
+                self.column_types[column] = data_type
                 
-            except Exception as e:
-                st.warning(f"Could not convert column '{column}' to {detected_type.value}: {str(e)}")
-    
-    def _calculate_column_statistics(self) -> None:
-        """Calculate statistics for each column."""
-        for column, data_type in self.column_types.items():
-            self.column_stats[column] = calculate_statistics(
-                self.df_processed[column], 
-                data_type
-            )
-    
-    def _validate_required_columns(self) -> None:
-        """Validate that required columns exist."""
-        required_columns = [ID_COLUMN, SNAPSHOT_DATE_COLUMN]
-        missing_columns = []
-        
-        for req_col in required_columns:
-            # Case-insensitive search for required columns
-            found = False
-            for col in self.df_processed.columns:
-                if col.lower() == req_col.lower():
-                    found = True
-                    # Rename to standard format if needed
-                    if col != req_col:
-                        self.df_processed = self.df_processed.rename(columns={col: req_col})
-                        self.column_types[req_col] = self.column_types.pop(col)
-                        self.column_stats[req_col] = self.column_stats.pop(col)
-                    break
+                # Convert to proper type first
+                try:
+                    self.df_processed[column] = convert_to_proper_type(
+                        self.df_processed[column], 
+                        data_type,
+                        DATE_FORMAT if column == SNAPSHOT_DATE_COLUMN else None
+                    )
+                except Exception as e:
+                    logger.warning(f"Error converting column {column}: {str(e)}")
+                
+                # Calculate column statistics
+                stats = calculate_statistics(self.df_processed[column], data_type)
+                # Convert numpy types to Python types for serialization
+                serializable_stats = {}
+                for k, v in stats.items():
+                    if isinstance(v, (np.int64, np.int32, np.int16, np.int8)):
+                        serializable_stats[k] = int(v)
+                    elif isinstance(v, (np.float64, np.float32)):
+                        serializable_stats[k] = float(v)
+                    elif isinstance(v, pd.Timestamp):
+                        serializable_stats[k] = v.isoformat()
+                    else:
+                        serializable_stats[k] = v
+                
+                column_info[column] = {
+                    'type': data_type.value,  # Store enum value instead of enum
+                    **serializable_stats
+                }
             
-            if not found:
-                missing_columns.append(req_col)
-        
-        if missing_columns:
-            st.warning(f"Missing recommended columns: {', '.join(missing_columns)}")
-    
-    def _handle_missing_data(self) -> None:
-        """Handle missing data appropriately for each column type."""
-        for column, data_type in self.column_types.items():
-            if data_type == DataType.CATEGORICAL:
-                # Fill categorical missing values with 'Unknown'
-                self.df_processed[column] = self.df_processed[column].fillna('Unknown')
-            elif data_type == DataType.TEXT:
-                # Fill text missing values with empty string
-                self.df_processed[column] = self.df_processed[column].fillna('')
-            # For numerical and date columns, leave NaN values as they are
-            # They will be handled appropriately in analysis
+            # Update state
+            self.state_manager.update_state('data.column_types', self.column_types)
+            self.state_manager.update_state('data.column_info', column_info)
+            
+            # Update state
+            self.state_manager.update_state('data.current_df', self.df_processed)
+            self.state_manager.update_state('data.data_loaded', True)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error processing data: {str(e)}")
+            return False
     
     def get_data(self, processed: bool = True) -> Optional[pd.DataFrame]:
         """
@@ -223,7 +244,7 @@ class DataHandler:
             DataFrame or None if no data is loaded
         """
         if processed:
-            return self.df_processed.copy() if self.df_processed is not None else None
+            return self.state_manager.get_state('data.current_df')
         else:
             return self.df_raw.copy() if self.df_raw is not None else None
     
@@ -234,55 +255,57 @@ class DataHandler:
         Returns:
             Dictionary with column information including type and statistics
         """
-        column_info = {}
-        for column in self.column_types:
-            column_info[column] = {
-                'type': self.column_types[column],
-                'stats': self.column_stats.get(column, {})
-            }
-        return column_info
+        return self.state_manager.get_state('data.column_info', {})
     
     def get_categorical_columns(self) -> List[str]:
         """Get list of categorical columns that exist in the current dataframe."""
-        if self.df_processed is None:
+        df = self.state_manager.get_state('data.current_df')
+        if df is None:
             return []
         
-        current_columns = set(self.df_processed.columns)
+        column_types = self.state_manager.get_state('data.column_types', {})
+        current_columns = set(df.columns)
         return [
-            col for col, dtype in self.column_types.items() 
+            col for col, dtype in column_types.items() 
             if dtype == DataType.CATEGORICAL and col in current_columns
         ]
     
     def get_numerical_columns(self) -> List[str]:
         """Get list of numerical columns that exist in the current dataframe."""
-        if self.df_processed is None:
+        df = self.state_manager.get_state('data.current_df')
+        if df is None:
             return []
         
-        current_columns = set(self.df_processed.columns)
+        column_types = self.state_manager.get_state('data.column_types', {})
+        current_columns = set(df.columns)
         return [
-            col for col, dtype in self.column_types.items() 
+            col for col, dtype in column_types.items() 
             if dtype == DataType.NUMERICAL and col in current_columns
         ]
     
     def get_date_columns(self) -> List[str]:
         """Get list of date columns that exist in the current dataframe."""
-        if self.df_processed is None:
+        df = self.state_manager.get_state('data.current_df')
+        if df is None:
             return []
         
-        current_columns = set(self.df_processed.columns)
+        column_types = self.state_manager.get_state('data.column_types', {})
+        current_columns = set(df.columns)
         return [
-            col for col, dtype in self.column_types.items() 
+            col for col, dtype in column_types.items() 
             if dtype == DataType.DATE and col in current_columns
         ]
     
     def get_text_columns(self) -> List[str]:
         """Get list of text columns that exist in the current dataframe."""
-        if self.df_processed is None:
+        df = self.state_manager.get_state('data.current_df')
+        if df is None:
             return []
         
-        current_columns = set(self.df_processed.columns)
+        column_types = self.state_manager.get_state('data.column_types', {})
+        current_columns = set(df.columns)
         return [
-            col for col, dtype in self.column_types.items() 
+            col for col, dtype in column_types.items() 
             if dtype == DataType.TEXT and col in current_columns
         ]
     
@@ -300,27 +323,28 @@ class DataHandler:
             'suggestions': []
         }
         
-        if self.df_processed is None:
+        df = self.state_manager.get_state('data.current_df')
+        if df is None:
             validation_results['is_valid'] = False
             validation_results['errors'].append("No data loaded")
             return validation_results
         
         # Check for ID column
-        if ID_COLUMN not in self.df_processed.columns:
+        if ID_COLUMN not in df.columns:
             validation_results['warnings'].append(f"No '{ID_COLUMN}' column found")
         
         # Check for Snapshot Date column
-        if SNAPSHOT_DATE_COLUMN not in self.df_processed.columns:
+        if SNAPSHOT_DATE_COLUMN not in df.columns:
             validation_results['warnings'].append(f"No '{SNAPSHOT_DATE_COLUMN}' column found")
         
         # Check for Stage column
-        stage_columns = [col for col in self.df_processed.columns if 'stage' in col.lower()]
+        stage_columns = [col for col in df.columns if 'stage' in col.lower()]
         if not stage_columns:
             validation_results['warnings'].append("No 'Stage' column found")
         else:
             # Check if stage values match expected values
             stage_col = stage_columns[0]
-            unique_stages = set(self.df_processed[stage_col].dropna().unique())
+            unique_stages = set(df[stage_col].dropna().unique())
             expected_stages = set(SALES_STAGES)
             
             unexpected_stages = unique_stages - expected_stages
@@ -330,8 +354,8 @@ class DataHandler:
                 )
         
         # Check for duplicate handling capability
-        if ID_COLUMN in self.df_processed.columns and SNAPSHOT_DATE_COLUMN in self.df_processed.columns:
-            duplicate_ids = self.df_processed[ID_COLUMN].duplicated().sum()
+        if ID_COLUMN in df.columns and SNAPSHOT_DATE_COLUMN in df.columns:
+            duplicate_ids = df[ID_COLUMN].duplicated().sum()
             if duplicate_ids > 0:
                 validation_results['suggestions'].append(
                     f"Found {duplicate_ids} duplicate IDs - this is expected for pipeline snapshots"
@@ -341,9 +365,8 @@ class DataHandler:
     
     def get_file_info(self) -> Dict[str, Any]:
         """Get information about the loaded file."""
-        return self.file_info.copy()
+        return self.state_manager.get_state('data.data_info', {})
     
     def is_data_loaded(self) -> bool:
         """Check if data is loaded."""
-        return self.df_processed is not None and not self.df_processed.empty
-
+        return self.state_manager.get_state('data.data_loaded', False)
