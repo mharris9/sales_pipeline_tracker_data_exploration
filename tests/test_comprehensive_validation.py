@@ -216,7 +216,7 @@ class TestComprehensiveValidation:
                 f"{owner} deal count mismatch: {actual_deals} != {expected_deals}"
             
             # Verify won deals count
-            actual_won = (owner_data['Stage'] == 'Won').sum()
+            actual_won = (owner_data['Stage'] == 'Closed - WON').sum()
             expected_won = expected_results[f'{owner.lower()}_won_deals']
             assert actual_won == expected_won, \
                 f"{owner} won deals mismatch: {actual_won} != {expected_won}"

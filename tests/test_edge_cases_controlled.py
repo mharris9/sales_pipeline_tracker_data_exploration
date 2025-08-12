@@ -218,7 +218,7 @@ class TestEdgeCasesControlled:
         
         df_with_final = feature_engine._calculate_final_stage(processed_df)
         assert 'final_stage' in df_with_final.columns
-        assert df_with_final['final_stage'].iloc[0] == 'Won'
+        assert df_with_final['final_stage'].iloc[0] == 'Closed - WON'
         
         # Reports should work with single opportunity
         config = {'x_axis': 'Owner', 'y_axis': 'SellPrice', 'aggregation': 'sum'}

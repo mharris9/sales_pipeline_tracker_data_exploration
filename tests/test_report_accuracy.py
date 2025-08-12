@@ -92,7 +92,7 @@ class TestReportAccuracy:
         
         # Verify we have the expected stages
         stage_names = [trace.name for trace in fig.data]
-        expected_stages = ['Won', 'Lost', 'Negotiation']  # Final stages in our data
+        expected_stages = ['Closed - WON', 'Closed - LOST', 'Negotiation']  # Final stages in our data
         
         for stage in expected_stages:
             assert stage in stage_names, f"Missing stage {stage} in grouped bar chart"
@@ -352,7 +352,7 @@ class TestReportAccuracy:
             'Snapshot Date': '2024-01-01',
             'GM%': 0.25,
             'BusinessUnit': 'Enterprise',
-            'Stage': 'Won'
+            'Stage': 'Closed - WON'
         }])
         
         # Test various report types

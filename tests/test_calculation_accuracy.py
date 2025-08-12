@@ -85,8 +85,8 @@ class TestCalculationAccuracy:
         assert avg_sellprice == expected_results['avg_sellprice_deduplicated']
         
         # Test stage counts
-        won_count = (deduplicated_df['Stage'] == 'Won').sum()
-        lost_count = (deduplicated_df['Stage'] == 'Lost').sum()
+        won_count = (deduplicated_df['Stage'] == 'Closed - WON').sum()
+        lost_count = (deduplicated_df['Stage'] == 'Closed - LOST').sum()
         active_count = len(deduplicated_df) - won_count - lost_count
         
         assert won_count == expected_results['won_deals_count']
@@ -105,7 +105,7 @@ class TestCalculationAccuracy:
         for owner in owners:
             owner_data = deduplicated_df[deduplicated_df['Owner'] == owner]
             owner_deals = len(owner_data)
-            owner_won = (owner_data['Stage'] == 'Won').sum()
+            owner_won = (owner_data['Stage'] == 'Closed - WON').sum()
             owner_win_rate = (owner_won / owner_deals * 100) if owner_deals > 0 else 0
             
             assert owner_deals == expected_results[f'{owner.lower()}_deals']

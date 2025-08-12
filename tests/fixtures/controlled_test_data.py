@@ -30,12 +30,12 @@ def create_controlled_dataset() -> pd.DataFrame:
         # OPP-001: Won deal, clear progression
         {'Id': 'OPP-001', 'OpportunityName': 'Deal Alpha', 'Snapshot Date': '2024-01-01', 'Created': '2024-01-01', 'Stage': 'Lead', 'SellPrice': 100000, 'GM%': 0.20, 'BusinessUnit': 'Enterprise', 'Owner': 'Alice'},
         {'Id': 'OPP-001', 'OpportunityName': 'Deal Alpha', 'Snapshot Date': '2024-01-15', 'Created': '2024-01-01', 'Stage': 'Budget', 'SellPrice': 120000, 'GM%': 0.25, 'BusinessUnit': 'Enterprise', 'Owner': 'Alice'},
-        {'Id': 'OPP-001', 'OpportunityName': 'Deal Alpha', 'Snapshot Date': '2024-01-30', 'Created': '2024-01-01', 'Stage': 'Won', 'SellPrice': 150000, 'GM%': 0.30, 'BusinessUnit': 'Enterprise', 'Owner': 'Alice'},
+        {'Id': 'OPP-001', 'OpportunityName': 'Deal Alpha', 'Snapshot Date': '2024-01-30', 'Created': '2024-01-01', 'Stage': 'Closed - WON', 'SellPrice': 150000, 'GM%': 0.30, 'BusinessUnit': 'Enterprise', 'Owner': 'Alice'},
         
         # OPP-002: Lost deal
         {'Id': 'OPP-002', 'OpportunityName': 'Deal Beta', 'Snapshot Date': '2024-01-05', 'Created': '2024-01-05', 'Stage': 'Lead', 'SellPrice': 200000, 'GM%': 0.15, 'BusinessUnit': 'SMB', 'Owner': 'Bob'},
         {'Id': 'OPP-002', 'OpportunityName': 'Deal Beta', 'Snapshot Date': '2024-01-20', 'Created': '2024-01-05', 'Stage': 'Budget', 'SellPrice': 180000, 'GM%': 0.18, 'BusinessUnit': 'SMB', 'Owner': 'Bob'},
-        {'Id': 'OPP-002', 'OpportunityName': 'Deal Beta', 'Snapshot Date': '2024-02-05', 'Created': '2024-01-05', 'Stage': 'Lost', 'SellPrice': 0, 'GM%': 0.00, 'BusinessUnit': 'SMB', 'Owner': 'Bob'},
+        {'Id': 'OPP-002', 'OpportunityName': 'Deal Beta', 'Snapshot Date': '2024-02-05', 'Created': '2024-01-05', 'Stage': 'Closed - LOST', 'SellPrice': 0, 'GM%': 0.00, 'BusinessUnit': 'SMB', 'Owner': 'Bob'},
         
         # OPP-003: Active deal (no final outcome)
         {'Id': 'OPP-003', 'OpportunityName': 'Deal Gamma', 'Snapshot Date': '2024-01-10', 'Created': '2024-01-10', 'Stage': 'Lead', 'SellPrice': 300000, 'GM%': 0.25, 'BusinessUnit': 'Government', 'Owner': 'Carol'},
@@ -45,7 +45,7 @@ def create_controlled_dataset() -> pd.DataFrame:
         # OPP-004: Won deal, different owner
         {'Id': 'OPP-004', 'OpportunityName': 'Deal Delta', 'Snapshot Date': '2024-01-15', 'Created': '2024-01-15', 'Stage': 'Lead', 'SellPrice': 400000, 'GM%': 0.10, 'BusinessUnit': 'Enterprise', 'Owner': 'David'},
         {'Id': 'OPP-004', 'OpportunityName': 'Deal Delta', 'Snapshot Date': '2024-02-01', 'Created': '2024-01-15', 'Stage': 'Budget', 'SellPrice': 450000, 'GM%': 0.12, 'BusinessUnit': 'Enterprise', 'Owner': 'David'},
-        {'Id': 'OPP-004', 'OpportunityName': 'Deal Delta', 'Snapshot Date': '2024-02-15', 'Created': '2024-01-15', 'Stage': 'Won', 'SellPrice': 500000, 'GM%': 0.15, 'BusinessUnit': 'Enterprise', 'Owner': 'David'},
+        {'Id': 'OPP-004', 'OpportunityName': 'Deal Delta', 'Snapshot Date': '2024-02-15', 'Created': '2024-01-15', 'Stage': 'Closed - WON', 'SellPrice': 500000, 'GM%': 0.15, 'BusinessUnit': 'Enterprise', 'Owner': 'David'},
     ]
     
     df = pd.DataFrame(data)
@@ -111,10 +111,10 @@ def get_expected_results() -> Dict[str, Any]:
         'opp_003_days_in_pipeline': 31,  # Jan 10 to Feb 10
         'opp_004_days_in_pipeline': 31,  # Jan 15 to Feb 15
         
-        'opp_001_final_stage': 'Won',
-        'opp_002_final_stage': 'Lost',
+        'opp_001_final_stage': 'Closed - WON',
+        'opp_002_final_stage': 'Closed - LOST',
         'opp_003_final_stage': 'Negotiation',
-        'opp_004_final_stage': 'Won',
+        'opp_004_final_stage': 'Closed - WON',
         
         'opp_001_starting_stage': 'Lead',
         'opp_002_starting_stage': 'Lead',

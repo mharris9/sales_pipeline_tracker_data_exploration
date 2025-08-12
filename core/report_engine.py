@@ -473,36 +473,103 @@ class ReportEngine:
         if group_by_column and group_by_column in df_deduplicated.columns:
             agg_data = df_deduplicated.groupby([x_column, group_by_column])[y_column].agg(aggregation).reset_index()
             
-            fig = go.Figure()
-            
-            # Get unique group values and sort them for consistent ordering
-            group_values = sorted([gv for gv in agg_data[group_by_column].unique() if not pd.isna(gv)])
-            
-            for i, group_value in enumerate(group_values):
-                group_data = agg_data[agg_data[group_by_column] == group_value]
+            # Check if all aggregated values are NaN
+            if agg_data[y_column].isna().all():
+                # Create empty figure with informative message
+                fig = go.Figure()
+                fig.add_annotation(
+                    text="📊 The report returned no results with current filters<br><br>" +
+                         "This usually means:<br>" +
+                         "• No data matches the selected criteria<br>" +
+                         "• All values for this metric are unavailable<br>" +
+                         "• Try adjusting your filters or selecting different columns",
+                    xref="paper", yref="paper",
+                    x=0.5, y=0.5, xanchor='center', yanchor='middle',
+                    showarrow=False,
+                    font=dict(size=14, color="gray"),
+                    align="center"
+                )
+            else:
+                fig = go.Figure()
                 
-                # Apply sorting to this group's data
-                group_data_sorted = apply_sorting(group_data, x_column, y_column, sort_by)
+                # Get unique group values and sort them for consistent ordering
+                group_values = sorted([gv for gv in agg_data[group_by_column].unique() if not pd.isna(gv)])
+                has_nan_values = agg_data[y_column].isna().any()
                 
-                fig.add_trace(go.Bar(
-                    x=group_data_sorted[x_column],
-                    y=group_data_sorted[y_column],
-                    name=str(group_value),
-                    marker_color=COLOR_PALETTE[i % len(COLOR_PALETTE)]
-                ))
+                for i, group_value in enumerate(group_values):
+                    group_data = agg_data[agg_data[group_by_column] == group_value]
+                    
+                    # Apply sorting to this group's data
+                    group_data_sorted = apply_sorting(group_data, x_column, y_column, sort_by)
+                    
+                    # Replace NaN values with 0 for display
+                    group_data_sorted[y_column] = group_data_sorted[y_column].fillna(0)
+                    
+                    fig.add_trace(go.Bar(
+                        x=group_data_sorted[x_column],
+                        y=group_data_sorted[y_column],
+                        name=str(group_value),
+                        marker_color=COLOR_PALETTE[i % len(COLOR_PALETTE)]
+                    ))
+                
+                # Add note about NaN values if any exist
+                if has_nan_values:
+                    fig.add_annotation(
+                        text="Note: Categories with no data are shown as zero",
+                        xref="paper", yref="paper",
+                        x=0.02, y=0.98, xanchor='left', yanchor='top',
+                        showarrow=False,
+                        font=dict(size=10, color="gray"),
+                        bgcolor="rgba(255,255,255,0.8)"
+                    )
         else:
             agg_data = df_deduplicated.groupby(x_column)[y_column].agg(aggregation).reset_index()
             
-            # Apply sorting to the aggregated data
-            agg_data_sorted = apply_sorting(agg_data, x_column, y_column, sort_by)
-            
-            fig = go.Figure(data=[
-                go.Bar(
-                    x=agg_data_sorted[x_column],
-                    y=agg_data_sorted[y_column],
-                    marker_color=COLOR_PALETTE[0]
+            # Check if all aggregated values are NaN
+            if agg_data[y_column].isna().all():
+                # Create empty figure with informative message
+                fig = go.Figure()
+                fig.add_annotation(
+                    text="📊 The report returned no results with current filters<br><br>" +
+                         "This usually means:<br>" +
+                         "• No data matches the selected criteria<br>" +
+                         "• All values for this metric are unavailable<br>" +
+                         "• Try adjusting your filters or selecting different columns",
+                    xref="paper", yref="paper",
+                    x=0.5, y=0.5, xanchor='center', yanchor='middle',
+                    showarrow=False,
+                    font=dict(size=14, color="gray"),
+                    align="center"
                 )
-            ])
+            else:
+                # Filter out NaN values for display but keep category names
+                display_data = agg_data.copy()
+                
+                # Apply sorting to the aggregated data
+                agg_data_sorted = apply_sorting(display_data, x_column, y_column, sort_by)
+                
+                # Replace NaN values with 0 for display purposes, but add annotation
+                has_nan_values = agg_data_sorted[y_column].isna().any()
+                agg_data_sorted[y_column] = agg_data_sorted[y_column].fillna(0)
+                
+                fig = go.Figure(data=[
+                    go.Bar(
+                        x=agg_data_sorted[x_column],
+                        y=agg_data_sorted[y_column],
+                        marker_color=COLOR_PALETTE[0]
+                    )
+                ])
+                
+                # Add note about NaN values if any exist
+                if has_nan_values:
+                    fig.add_annotation(
+                        text="Note: Categories with no data are shown as zero",
+                        xref="paper", yref="paper",
+                        x=0.02, y=0.98, xanchor='left', yanchor='top',
+                        showarrow=False,
+                        font=dict(size=10, color="gray"),
+                        bgcolor="rgba(255,255,255,0.8)"
+                    )
         
         # Add sorting info to title
         sort_suffix = ""

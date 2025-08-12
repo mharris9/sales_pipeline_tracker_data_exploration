@@ -268,8 +268,9 @@ class FeatureEngine:
             first_dates = clean_df.groupby(id_col)[date_col].min().reset_index()
             first_dates.columns = [id_col, 'first_date']
             
-            # Find Closed - WON date for each ID
-            won_records = clean_df[clean_df[stage_col] == "Closed - WON"].copy()
+            # Find Closed - WON date for each ID (handle different naming conventions)
+            won_stages = ['Closed - WON', 'Won', 'Closed Won', 'WON']
+            won_records = clean_df[clean_df[stage_col].isin(won_stages)].copy()
             
             if not won_records.empty:
                 won_dates = won_records.groupby(id_col)[date_col].min().reset_index()
