@@ -1,0 +1,76 @@
+/* Main Styles */
+.stApp {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Header Styles */
+.stMarkdown h1 {
+    color: #1E88E5;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #E3F2FD;
+}
+
+/* Metric Styles */
+[data-testid="stMetricValue"] {
+    font-size: 2rem;
+    color: #1E88E5;
+}
+
+[data-testid="stMetricDelta"] {
+    font-size: 1rem;
+}
+
+/* Filter Styles */
+.stSlider, .stNumberInput {
+    padding: 1rem 0;
+}
+
+/* Data Preview Styles */
+[data-testid="stDataFrame"] {
+    font-size: 0.9rem;
+}
+
+/* Form Styles */
+[data-testid="stForm"] {
+    padding: 1rem;
+    border: 1px solid #E3F2FD;
+    border-radius: 0.5rem;
+    background-color: #FAFAFA;
+}
+
+/* Button Styles */
+.stButton button {
+    width: 100%;
+    border-radius: 0.3rem;
+    transition: all 0.2s;
+}
+
+.stButton button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Error Message Styles */
+.stAlert {
+    padding: 1rem;
+    margin: 1rem 0;
+    border-radius: 0.3rem;
+}
+
+/* Loading Spinner Styles */
+.stSpinner {
+    text-align: center;
+    padding: 2rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .stApp {
+        padding: 1rem;
+    }
+    
+    [data-testid="stMetricValue"] {
+        font-size: 1.5rem;
+    }
+}

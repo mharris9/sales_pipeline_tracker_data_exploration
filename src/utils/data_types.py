@@ -72,8 +72,13 @@ def detect_data_type(series: pd.Series, column_name: str = None) -> DataType:
         column_lower = column_name.lower()
         if 'date' in column_lower or 'time' in column_lower:
             return DataType.DATE
-        if 'id' in column_lower and column_lower.endswith('id'):
-            return DataType.CATEGORICAL
+        if 'id' in column_lower:
+            # Try to convert to numeric first
+            try:
+                pd.to_numeric(clean_series)
+                return DataType.NUMERICAL
+            except:
+                return DataType.CATEGORICAL
     
     # Check if it's already a datetime type
     if pd.api.types.is_datetime64_any_dtype(series):
