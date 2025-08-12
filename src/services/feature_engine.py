@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Any, Callable
 import streamlit as st
 import logging
 
-from utils.data_types import DataType
+from src.utils.data_types import DataType
 
 logger = logging.getLogger(__name__)
 
@@ -186,38 +186,51 @@ class FeatureEngine:
         
         return df_with_features
     
+    @st.cache_data(ttl=1800, show_spinner="Calculating category counts...")
+    def _calculate_category_counts_cached(_df: pd.DataFrame) -> Dict[str, int]:
+        """Cached version of category counts calculation."""
+        return _df['category'].value_counts().to_dict()
+
     def _calculate_category_counts(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Calculate counts for each category."""
+        """Calculate counts for each category with caching."""
         df = df.copy()
-        value_counts = df['category'].value_counts().to_dict()
+        value_counts = self._calculate_category_counts_cached(df)
         self.state_manager.set_state(f'feature_results/category_counts', value_counts)
         return df
     
-    def _calculate_value_stats(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Calculate statistical metrics for values."""
-        df = df.copy()
-        stats = {
-            'mean': float(df['value'].mean()),
-            'median': float(df['value'].median()),
-            'std': float(df['value'].std())
+    @st.cache_data(ttl=1800, show_spinner="Calculating value statistics...")
+    def _calculate_value_stats_cached(_df: pd.DataFrame) -> Dict[str, float]:
+        """Cached version of value statistics calculation."""
+        return {
+            'mean': float(_df['value'].mean()),
+            'median': float(_df['value'].median()),
+            'std': float(_df['value'].std())
         }
+
+    def _calculate_value_stats(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Calculate statistical metrics for values with caching."""
+        df = df.copy()
+        stats = self._calculate_value_stats_cached(df)
         self.state_manager.set_state(f'feature_results/value_stats', stats)
         return df
     
-    def _calculate_date_trends(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Calculate trends over time."""
-        df = df.copy()
-        
+    @st.cache_data(ttl=1800, show_spinner="Calculating date trends...")
+    def _calculate_date_trends_cached(_df: pd.DataFrame) -> Dict[str, Dict[int, int]]:
+        """Cached version of date trends calculation."""
         # Convert numpy types to Python types
-        daily_counts = df['date'].dt.day.value_counts()
-        weekly_counts = df['date'].dt.isocalendar().week.value_counts()
-        monthly_counts = df['date'].dt.month.value_counts()
+        daily_counts = _df['date'].dt.day.value_counts()
+        weekly_counts = _df['date'].dt.isocalendar().week.value_counts()
+        monthly_counts = _df['date'].dt.month.value_counts()
         
-        trends = {
+        return {
             'daily': {int(k): int(v) for k, v in daily_counts.items()},
             'weekly': {int(k): int(v) for k, v in weekly_counts.items()},
             'monthly': {int(k): int(v) for k, v in monthly_counts.items()}
         }
-        
+
+    def _calculate_date_trends(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Calculate trends over time with caching."""
+        df = df.copy()
+        trends = self._calculate_date_trends_cached(df)
         self.state_manager.set_state(f'feature_results/date_trends', trends)
         return df

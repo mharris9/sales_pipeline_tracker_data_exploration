@@ -15,7 +15,7 @@ from config.settings import (
     DATE_FORMAT, SNAPSHOT_DATE_COLUMN, ID_COLUMN, 
     SALES_STAGES, MAX_FILE_SIZE_MB
 )
-from utils.data_types import (
+from src.utils.data_types import (
     DataType, detect_data_type, convert_to_proper_type, 
     calculate_statistics
 )
@@ -90,9 +90,52 @@ class DataHandler:
             st.error(f"Error loading DataFrame: {str(e)}")
             return False
     
+    @st.cache_data(ttl=3600, show_spinner="Loading data...")
+    def _load_file_cached(_uploaded_file) -> Tuple[bool, Optional[pd.DataFrame], Dict[str, Any]]:
+        """
+        Cached version of file loading for performance.
+        
+        Args:
+            _uploaded_file: Streamlit uploaded file object
+            
+        Returns:
+            Tuple of (success, dataframe, file_info)
+        """
+        try:
+            # Check file size
+            if _uploaded_file.size > MAX_FILE_SIZE_MB * 1024 * 1024:
+                return False, None, {'error': f'File too large. Maximum size is {MAX_FILE_SIZE_MB}MB'}
+            
+            # Read file based on type
+            if _uploaded_file.name.endswith('.csv'):
+                df = pd.read_csv(_uploaded_file)
+            elif _uploaded_file.name.endswith(('.xlsx', '.xls')):
+                df = pd.read_excel(_uploaded_file)
+            else:
+                return False, None, {'error': 'Unsupported file format. Please upload CSV or Excel file.'}
+            
+            # Validate required columns
+            required_columns = [ID_COLUMN, SNAPSHOT_DATE_COLUMN]
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                return False, None, {'error': f'Missing required columns: {", ".join(missing_columns)}'}
+            
+            # Create file info
+            file_info = {
+                'name': _uploaded_file.name,
+                'size': _uploaded_file.size,
+                'type': _uploaded_file.type,
+                'columns': len(df.columns)
+            }
+            
+            return True, df, file_info
+            
+        except Exception as e:
+            return False, None, {'error': f'Error reading file: {str(e)}'}
+
     def load_file(self, uploaded_file) -> bool:
         """
-        Load data from uploaded CSV or XLSX file.
+        Load data from uploaded CSV or XLSX file with caching and validation.
         
         Args:
             uploaded_file: Streamlit uploaded file object
@@ -101,55 +144,19 @@ class DataHandler:
             True if successful, False otherwise
         """
         try:
-            # Check file size
-            if uploaded_file.size > MAX_FILE_SIZE_MB * 1024 * 1024:
-                st.error(f"File size ({uploaded_file.size / (1024*1024):.1f} MB) exceeds limit of {MAX_FILE_SIZE_MB} MB")
+            # Use cached file loading for performance
+            success, df, file_info = self._load_file_cached(uploaded_file)
+            
+            if not success:
+                error_msg = file_info.get('error', 'Unknown error occurred')
+                st.toast(f"❌ {error_msg}", icon="❌")
                 return False
             
-            # Store file info
-            file_info = {
-                'name': uploaded_file.name,
-                'size': uploaded_file.size,
-                'type': uploaded_file.type
-            }
+            # Store raw data
+            self.df_raw = df.copy()
+            
+            # Update file info in state
             self.state_manager.update_state('data.data_info', file_info)
-            
-            # Read file based on extension
-            file_extension = Path(uploaded_file.name).suffix.lower()
-            
-            try:
-                if file_extension == '.csv':
-                    # Read content as string
-                    content = uploaded_file.read()
-                    if isinstance(content, bytes):
-                        content = content.decode('utf-8')
-                    
-                    # Create StringIO buffer
-                    buffer = StringIO(content)
-                    
-                    # Read DataFrame
-                    self.df_raw = pd.read_csv(buffer)
-                elif file_extension in ['.xlsx', '.xls']:
-                    uploaded_file.seek(0)
-                    self.df_raw = pd.read_excel(uploaded_file)
-                else:
-                    st.error(f"Unsupported file type: {file_extension}")
-                    return False
-            except Exception as e:
-                st.error(f"Error reading file: {str(e)}")
-                return False
-            
-            # Basic validation
-            if self.df_raw is None or self.df_raw.empty:
-                st.error("The uploaded file is empty.")
-                return False
-            
-            # Validate required columns
-            required_columns = [ID_COLUMN, SNAPSHOT_DATE_COLUMN]
-            missing_columns = [col for col in required_columns if col not in self.df_raw.columns]
-            if missing_columns:
-                st.error(f"Missing required columns: {', '.join(missing_columns)}")
-                return False
             
             # Process the data
             success = self._process_data()
@@ -160,11 +167,12 @@ class DataHandler:
             self.state_manager.update_state('data.current_df', self.df_processed)
             self.state_manager.update_state('data.data_loaded', True)
             
-            st.success(f"Successfully loaded {len(self.df_raw)} rows and {len(self.df_raw.columns)} columns")
+            # Show success message with toast
+            st.toast(f"✅ Successfully loaded {len(self.df_raw)} rows and {len(self.df_raw.columns)} columns", icon="✅")
             return True
             
         except Exception as e:
-            st.error(f"Error loading file: {str(e)}")
+            st.toast(f"❌ Error loading file: {str(e)}", icon="❌")
             return False
     
     def _process_data(self) -> bool:

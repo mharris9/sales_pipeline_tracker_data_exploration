@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Any, Callable
 import streamlit as st
 import logging
 
-from utils.data_types import DataType
+from src.utils.data_types import DataType
 
 logger = logging.getLogger(__name__)
 

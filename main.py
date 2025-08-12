@@ -57,23 +57,54 @@ def render_header():
         st.metric("Memory Usage", memory_usage)
 
 def render_data_upload():
-    """Render the data upload section"""
+    """Render the data upload section with form validation"""
     st.header("Data Upload")
-    uploaded_file = st.file_uploader(
-        "Choose a CSV file",
-        type="csv",
-        key="file_uploader"
-    )
     
-    if uploaded_file:
-        data_handler = st.session_state.state_manager.get_extension('data_handler')
-        with st.spinner("Loading data..."):
-            if data_handler.load_file(uploaded_file):
-                st.success("Data loaded successfully!")
-                time.sleep(0.1)  # Anti-flicker
-                st.session_state.state_manager.trigger_rerun()
-            else:
-                st.error("Failed to load data. Please check the file format.")
+    with st.form("data_upload_form"):
+        uploaded_file = st.file_uploader(
+            "Choose a CSV file",
+            type=["csv", "xlsx", "xls"],
+            key="file_uploader",
+            help="Upload your sales pipeline data file (CSV or Excel)"
+        )
+        
+        # Form validation
+        form_valid = True
+        validation_errors = []
+        
+        if uploaded_file:
+            # Check file size
+            file_size_mb = uploaded_file.size / (1024 * 1024)
+            if file_size_mb > 50:  # 50MB limit
+                validation_errors.append(f"File size ({file_size_mb:.1f} MB) exceeds 50 MB limit")
+                form_valid = False
+            
+            # Check file type
+            file_extension = uploaded_file.name.lower().split('.')[-1]
+            if file_extension not in ['csv', 'xlsx', 'xls']:
+                validation_errors.append(f"Unsupported file type: {file_extension}")
+                form_valid = False
+        
+        # Show validation errors
+        if validation_errors:
+            for error in validation_errors:
+                st.error(error)
+        
+        # Submit button
+        submit_button = st.form_submit_button(
+            "Load Data",
+            disabled=not uploaded_file or not form_valid,
+            help="Click to load the uploaded file"
+        )
+        
+        if submit_button and uploaded_file and form_valid:
+            data_handler = st.session_state.state_manager.get_extension('data_handler')
+            with st.spinner("Loading data..."):
+                if data_handler.load_file(uploaded_file):
+                    time.sleep(0.1)  # Anti-flicker
+                    st.session_state.state_manager.trigger_rerun()
+                else:
+                    st.error("Failed to load data. Please check the file format.")
 
 def main():
     """Main application entry point"""

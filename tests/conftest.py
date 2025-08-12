@@ -12,13 +12,12 @@ import os
 # Add the project root to the path so we can import modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.data_handler import DataHandler
-from core.feature_engine import FeatureEngine
-from core.report_engine import ReportEngine
-from core.filter_manager import FilterManager
-from core.outlier_manager import OutlierManager
-from tests.fixtures.controlled_test_data import create_controlled_dataset, get_expected_results
-from utils.data_types import DataType
+from src.services.data_handler import DataHandler
+from src.services.feature_engine import FeatureEngine
+from src.services.report_engine import ReportEngine
+from src.services.filter_manager import FilterManager
+from src.services.outlier_manager import OutlierManager
+from src.utils.data_types import DataType
 
 
 @pytest.fixture

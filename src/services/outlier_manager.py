@@ -10,7 +10,7 @@ from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 import logging
 
-from utils.data_types import DataType
+from src.utils.data_types import DataType
 
 logger = logging.getLogger(__name__)
 

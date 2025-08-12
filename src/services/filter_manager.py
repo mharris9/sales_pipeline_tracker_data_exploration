@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Any, Union, Tuple
 import streamlit as st
 from datetime import datetime, date
 
-from utils.data_types import DataType
+from src.utils.data_types import DataType
 
 class FilterManager:
     """
@@ -212,7 +212,7 @@ class FilterManager:
         self.state_manager.update_state('filters.filter_configs', filter_configs)
     
     def _render_categorical_filter_ui(self, column: str, filter_config: Dict[str, Any]) -> None:
-        """Render UI for categorical filters."""
+        """Render UI for categorical filters with proper callbacks and validation."""
         unique_values = filter_config['unique_values']
         
         # Initialize session state for this filter if not exists
@@ -223,18 +223,22 @@ class FilterManager:
                 'selected_values': filter_config['selected_values'].copy()
             }
         
-        # Filter type selection
+        # Filter type selection with callback
+        def update_filter_type():
+            st.session_state[state_key]['filter_type'] = st.session_state[f"filter_type_{column}"]
+            filter_config['filter_type'] = st.session_state[f"filter_type_{column}"]
+            self.state_manager.trigger_rerun()
+        
         filter_type = st.radio(
             f"Filter type for {column}",
             ['include', 'exclude'],
             index=0 if st.session_state[state_key]['filter_type'] == 'include' else 1,
             key=f"filter_type_{column}",
-            horizontal=True
+            horizontal=True,
+            on_change=update_filter_type
         )
-        st.session_state[state_key]['filter_type'] = filter_type
-        filter_config['filter_type'] = filter_type
         
-        # Value selection
+        # Value selection with validation
         if len(unique_values) <= 10:
             # Use checkboxes for small number of values
             st.write("Select values to include/exclude:")
@@ -245,17 +249,27 @@ class FilterManager:
             for i, value in enumerate(unique_values):
                 with cols[i % 2]:
                     checkbox_key = f"filter_cat_{column}_{value}"
+                    
+                    def update_selected_values(val=value):
+                        current_values = st.session_state[state_key]['selected_values']
+                        if st.session_state[checkbox_key]:
+                            if val not in current_values:
+                                current_values.append(val)
+                        else:
+                            if val in current_values:
+                                current_values.remove(val)
+                        st.session_state[state_key]['selected_values'] = current_values
+                        filter_config['selected_values'] = current_values
+                        self.state_manager.trigger_rerun()
+                    
                     if st.checkbox(
                         value,
                         value=value in st.session_state[state_key]['selected_values'],
                         key=checkbox_key,
-                        help=f"Toggle {value} in filter"
+                        help=f"Toggle {value} in filter",
+                        on_change=update_selected_values
                     ):
                         selected_values.append(value)
-            
-            # Update both session state and filter config
-            st.session_state[state_key]['selected_values'] = selected_values
-            filter_config['selected_values'] = selected_values
             
             # Show summary of selected values
             if selected_values:
@@ -264,19 +278,21 @@ class FilterManager:
                 st.caption("No values selected")
         else:
             # Use multiselect for large number of values
+            def update_multiselect():
+                st.session_state[state_key]['selected_values'] = st.session_state[f"filter_multiselect_{column}"]
+                filter_config['selected_values'] = st.session_state[f"filter_multiselect_{column}"]
+                self.state_manager.trigger_rerun()
+            
             selected_values = st.multiselect(
                 f"Select values for {column}",
                 options=unique_values,
                 default=st.session_state[state_key]['selected_values'],
-                key=f"filter_multiselect_{column}"
+                key=f"filter_multiselect_{column}",
+                on_change=update_multiselect
             )
-            
-            # Update both session state and filter config
-            st.session_state[state_key]['selected_values'] = selected_values
-            filter_config['selected_values'] = selected_values
     
     def _render_numerical_filter_ui(self, column: str, filter_config: Dict[str, Any]) -> None:
-        """Render UI for numerical filters."""
+        """Render UI for numerical filters with proper callbacks and validation."""
         min_val = filter_config['min_value']
         max_val = filter_config['max_value']
         
@@ -289,15 +305,19 @@ class FilterManager:
                 'selected_max': filter_config['selected_max']
             }
         
-        # Filter type selection
+        # Filter type selection with callback
+        def update_filter_type():
+            st.session_state[state_key]['filter_type'] = st.session_state[f"filter_type_{column}"]
+            filter_config['filter_type'] = st.session_state[f"filter_type_{column}"]
+            self.state_manager.trigger_rerun()
+        
         filter_type = st.selectbox(
             f"Filter type for {column}",
             ['range', 'greater_than', 'less_than'],
             index=['range', 'greater_than', 'less_than'].index(st.session_state[state_key]['filter_type']),
-            key=f"filter_type_{column}"
+            key=f"filter_type_{column}",
+            on_change=update_filter_type
         )
-        st.session_state[state_key]['filter_type'] = filter_type
-        filter_config['filter_type'] = filter_type
         
         if filter_type == 'range':
             st.write("Enter exact values or use the slider:")

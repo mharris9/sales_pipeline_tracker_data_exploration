@@ -13,34 +13,95 @@ def render_features_page():
         
     feature_engine = st.session_state.state_manager.get_extension('feature_engine')
     
-    # Feature selection
+    # Check if data is loaded
+    if not st.session_state.state_manager.get_state('data.data_loaded', False):
+        st.warning("No data loaded. Please upload data first.")
+        return
+    
+    # Get available features
+    data_handler = st.session_state.state_manager.get_extension('data_handler')
+    df = data_handler.get_current_df()
+    features = feature_engine.get_available_features(df.columns.tolist()) if df is not None else {}
+    
+    if not features:
+        st.info("No features available for the current data columns.")
+        return
+    
+    # Feature selection with form validation
     st.subheader("Available Features")
-    features = feature_engine.get_available_features()
     
     with st.form("feature_form"):
-        for feature in features:
-            st.checkbox(
-                feature['description'],
-                key=f"feature_{feature['name']}",
-                value=feature['active']
-            )
+        st.write("Select features to calculate:")
         
-        submitted = st.form_submit_button("Update Features")
+        # Feature checkboxes
+        selected_features = []
+        for feature_name, feature_info in features.items():
+            if st.checkbox(
+                f"{feature_name}: {feature_info['description']}",
+                key=f"feature_{feature_name}",
+                help=f"Requires: {', '.join(feature_info['requirements'])}"
+            ):
+                selected_features.append(feature_name)
         
-        if submitted:
-            with st.spinner("Updating features..."):
-                active_features = [
-                    f['name'] for f in features 
-                    if st.session_state[f"feature_{f['name']}"]
-                ]
-                feature_engine.set_active_features(active_features)
-                time.sleep(0.1)  # Anti-flicker
-                st.session_state.state_manager.trigger_rerun()
+        # Form validation
+        form_valid = True
+        validation_errors = []
+        
+        # Check if selected features have required columns
+        if df is not None:
+            available_columns = df.columns.tolist()
+            for feature_name in selected_features:
+                if feature_name in features:
+                    required_cols = features[feature_name]['requirements']
+                    missing_cols = [col for col in required_cols if col not in available_columns]
+                    if missing_cols:
+                        validation_errors.append(f"Feature '{feature_name}' requires columns: {', '.join(missing_cols)}")
+                        form_valid = False
+        
+        # Show validation errors
+        if validation_errors:
+            for error in validation_errors:
+                st.error(error)
+        
+        # Submit button
+        submitted = st.form_submit_button(
+            "Calculate Features",
+            disabled=not form_valid,
+            help="Calculate the selected features"
+        )
+        
+        if submitted and form_valid:
+            with st.spinner("Calculating features..."):
+                try:
+                    feature_engine.set_active_features(selected_features)
+                    
+                    # Calculate features
+                    df_with_features = feature_engine.calculate_features(df)
+                    
+                    # Update state with new dataframe
+                    st.session_state.state_manager.set_state('data.current_df', df_with_features)
+                    
+                    st.toast(f"✅ Calculated {len(selected_features)} feature(s) successfully!", icon="✅")
+                    time.sleep(0.1)  # Anti-flicker
+                    st.session_state.state_manager.trigger_rerun()
+                    
+                except Exception as e:
+                    st.toast(f"❌ Error calculating features: {str(e)}", icon="❌")
 
     # Display feature results
-    if feature_engine.get_active_features():
+    active_features = feature_engine.get_active_features()
+    if active_features:
         st.subheader("Feature Results")
-        feature_engine.display_results()
+        
+        # Get feature results from state
+        feature_results = st.session_state.state_manager.get_state('feature_results', {})
+        
+        for feature_name in active_features:
+            if feature_name in feature_results:
+                st.write(f"**{feature_name}:**")
+                st.json(feature_results[feature_name])
+            else:
+                st.info(f"No results available for {feature_name}")
 
 if __name__ == "__main__":
     render_features_page()
