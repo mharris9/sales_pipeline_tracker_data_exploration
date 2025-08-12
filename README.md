@@ -12,6 +12,7 @@ A comprehensive Streamlit application for exploring and analyzing sales pipeline
 - **Feature Engineering**: Derive new insights with calculated features
 - **Interactive Visualizations**: Multiple chart types with group-by capabilities
 - **Data Export**: Export filtered data and high-resolution charts
+- **Centralized State Management**: Robust state management with debugging and error recovery
 
 ### Supported Report Types
 - **Descriptive Statistics**: Summary statistics for all data types
@@ -42,6 +43,7 @@ A comprehensive Streamlit application for exploring and analyzing sales pipeline
 - **Group-By Analysis**: Group all reports by categorical columns
 - **Smart Filtering**: Context-aware filters that adapt to data types
 - **Export Options**: CSV data export, PNG/SVG chart export, analysis summaries
+- **State Management**: Centralized state with history tracking, validation, and debugging
 
 ## Installation 💻
 
@@ -143,33 +145,89 @@ Additional columns can contain any combination of:
 
 ## Architecture 🏗️
 
-### Core Modules
+### Project Structure
+```
+sales_pipeline_tracker_data_exploration/
+├── 📋 main.py                      # Main Streamlit application entry point
+├── 📋 requirements.txt             # Python dependencies
+├── 📖 README.md                    # Comprehensive documentation
+├── 🚀 QUICKSTART.md               # Quick start guide
+├── 📊 PROJECT_STRUCTURE.md        # Project structure overview
+├── 🧪 test_app.py                 # Test script for application components
+├── 🎲 create_sample_data.py       # Sample data generator
+│
+├── 🏗️ src/                        # Source code directory
+│   ├── services/                   # Core application services
+│   │   ├── data_handler.py        # DataHandler - data import and processing
+│   │   ├── filter_manager.py      # FilterManager - data filtering system
+│   │   ├── feature_engine.py      # FeatureEngine - derived feature calculations
+│   │   ├── report_engine.py       # ReportEngine - reports and visualizations
+│   │   ├── outlier_manager.py     # OutlierManager - outlier detection and handling
+│   │   └── state_manager.py       # StateManager - centralized state management
+│   ├── utils/                     # Utility modules
+│   │   ├── data_types.py          # Data type detection and utilities
+│   │   ├── export_utils.py        # Export functionality
+│   │   └── column_mapping.py      # Column mapping utilities
+│   └── assets/                    # Static assets (CSS, images)
+│
+├── 📄 pages/                      # Streamlit pages for multi-page app
+│   ├── 1_filters.py              # Filters page
+│   ├── 2_features.py             # Features page
+│   ├── 3_outliers.py             # Outliers page
+│   ├── 4_reports.py              # Reports page
+│   ├── 5_export.py               # Export page
+│   └── 6_data_preview.py         # Data preview page
+│
+├── ⚙️ config/                     # Configuration
+│   └── settings.py               # Application settings and constants
+│
+├── 🧪 tests/                     # Test suite
+│   ├── services/                 # Service layer tests
+│   │   ├── test_data_handler.py     # DataHandler tests
+│   │   ├── test_filter_manager.py   # FilterManager tests
+│   │   ├── test_feature_engine.py   # FeatureEngine tests
+│   │   ├── test_report_engine.py    # ReportEngine tests
+│   │   ├── test_outlier_manager.py  # OutlierManager tests
+│   │   └── test_state_manager.py    # StateManager tests
+│   ├── pages/                    # Page component tests
+│   │   └── test_filter_ui.py        # Filter UI tests
+│   └── conftest.py              # Test configuration and fixtures
+│
+└── 📚 docs/                      # Documentation
+    ├── STATE_MANAGEMENT_TRANSITION.md
+    └── LESSONS_LEARNED.md
+```
 
-#### `core/data_handler.py`
+### Core Services
+
+#### `src/services/data_handler.py`
 - **DataHandler**: Manages data import, validation, and type conversion
 - Features:
   - Automatic data type detection
   - Missing data handling
   - Sales pipeline data validation
   - Memory-efficient processing
+  - Caching for performance
 
-#### `core/filter_manager.py`
+#### `src/services/filter_manager.py`
 - **FilterManager**: Creates and manages data filters
 - Features:
   - Dynamic filter generation based on data types
   - Multiple filter modes per data type
   - Filter state management
   - Batch filter application
+  - Widget callbacks and state binding
 
-#### `core/feature_engine.py`
+#### `src/services/feature_engine.py`
 - **FeatureEngine**: Handles derived feature calculations
 - Features:
   - Extensible feature framework
   - Sales pipeline-specific features
   - Automatic column detection
   - Error handling and validation
+  - Caching for expensive calculations
 
-#### `core/report_engine.py`
+#### `src/services/report_engine.py`
 - **ReportEngine**: Generates reports and visualizations
 - Features:
   - Multiple chart types
@@ -177,20 +235,26 @@ Additional columns can contain any combination of:
   - Dynamic axis selection
   - Statistical calculations
 
-#### `utils/data_types.py`
-- Data type detection and utilities
-- Column compatibility checking
-- Statistical calculations
-
-#### `utils/export_utils.py`
-- **ExportManager**: Handles all export functionality
+#### `src/services/outlier_manager.py`
+- **OutlierManager**: Manages outlier detection and exclusion
 - Features:
-  - Multiple export formats
-  - High-resolution chart export
-  - Summary report generation
+  - Multiple detection algorithms
+  - Configurable sensitivity levels
+  - Preview and exclusion capabilities
+  - Integration with filtering system
+
+#### `src/services/state_manager.py`
+- **StateManager**: Centralized state management system
+- Features:
+  - Hierarchical state organization
+  - State validation and error recovery
+  - History tracking and debugging
+  - Extension system for components
+  - Memory management and optimization
 
 ### Configuration
 - `config/settings.py`: Application settings and constants
+- `.streamlit/config.toml`: Streamlit configuration
 - Easily customizable parameters
 - Chart styling and color schemes
 
@@ -203,6 +267,7 @@ The application is optimized for large datasets:
 - **Caching**: Streamlit caching for expensive operations
 - **Optimized Filtering**: Efficient pandas operations
 - **Progress Indicators**: User feedback for long operations
+- **State Management**: Centralized state with memory optimization
 
 **Tested with**: 300,000 rows × 30 columns (≈20MB files)
 
@@ -219,10 +284,47 @@ The application is optimized for large datasets:
 3. Define axis requirements and compatibility
 4. The UI will automatically include the new report type
 
+### Adding New Outlier Detection Methods
+1. Implement detection function in `OutlierManager`
+2. Register with `register_detector()`
+3. Add UI configuration in `create_outlier_settings()`
+
 ### Styling
 - Modify `config/settings.py` for colors and themes
 - Chart styling uses Plotly themes
 - Streamlit components follow the configured layout
+
+## Testing 🧪
+
+### Test Structure
+```
+tests/
+├── services/                     # Service layer tests
+│   ├── test_data_handler.py     # DataHandler tests
+│   ├── test_filter_manager.py   # FilterManager tests
+│   ├── test_feature_engine.py   # FeatureEngine tests
+│   ├── test_report_engine.py    # ReportEngine tests
+│   ├── test_outlier_manager.py  # OutlierManager tests
+│   └── test_state_manager.py    # StateManager tests
+├── pages/                        # Page component tests
+│   └── test_filter_ui.py        # Filter UI tests
+└── conftest.py                  # Test configuration and fixtures
+```
+
+### Running Tests
+```bash
+# Run all tests
+pytest
+
+# Run specific test file
+pytest tests/services/test_data_handler.py
+
+# Run with verbose output
+pytest -v
+
+# Run with coverage
+pytest --cov=src
+```
 
 ## Troubleshooting 🔧
 
@@ -243,6 +345,11 @@ The application is optimized for large datasets:
 - Check for sufficient data (some features need multiple records per ID)
 - Review date column formatting
 
+**State Management Issues**:
+- Check application logs for state errors
+- Use debug information in StateManager
+- Verify state consistency across components
+
 **Performance Issues**:
 - Consider filtering data before adding features
 - Use smaller date ranges for time-series analysis
@@ -252,6 +359,7 @@ The application is optimized for large datasets:
 - Check the application logs in the terminal
 - Review error messages in the Streamlit interface
 - Verify your data structure matches expectations
+- Use StateManager debug information for troubleshooting
 
 ## Technical Requirements 📋
 
@@ -266,6 +374,8 @@ The application is optimized for large datasets:
 - plotly >= 5.15.0
 - numpy >= 1.24.0
 - openpyxl >= 3.1.0 (for Excel support)
+- scikit-learn >= 1.3.0 (for outlier detection)
+- scipy >= 1.11.0 (for statistical functions)
 - Additional dependencies in `requirements.txt`
 
 ## License 📄
@@ -274,15 +384,23 @@ This project is provided as-is for data analysis purposes. Feel free to modify a
 
 ## Current Development 🚧
 
-### State Management Enhancement
-We are transitioning to a centralized state management system to improve:
-- Data consistency and reliability
-- Debugging and monitoring capabilities
-- Feature extensibility
-- Performance optimization
-- Error recovery
+### State Management Enhancement ✅
+We have successfully transitioned to a centralized state management system that provides:
+- **Data consistency and reliability**: Centralized state with validation
+- **Debugging and monitoring capabilities**: Comprehensive logging and error tracking
+- **Feature extensibility**: Extension system for new components
+- **Performance optimization**: Memory management and caching
+- **Error recovery**: Automatic state validation and recovery
 
-See [State Management Transition](docs/STATE_MANAGEMENT_TRANSITION.md) for details about this major enhancement.
+### Project Structure Reorganization ✅
+The project has been reorganized to follow Streamlit best practices:
+- **Modular architecture**: Services in `src/services/`
+- **Multi-page application**: Pages in `pages/` directory
+- **Configuration management**: `.streamlit/config.toml`
+- **Comprehensive testing**: Organized test suite
+- **Documentation**: Updated documentation structure
+
+See [State Management Transition](docs/STATE_MANAGEMENT_TRANSITION.md) for details about the implementation.
 
 ## Future Enhancements 🔮
 
@@ -294,6 +412,8 @@ Potential improvements and extensions:
 - Custom dashboard creation
 - Multi-user support
 - API integration capabilities
+- Advanced state persistence
+- Performance monitoring dashboard
 
 ---
 
