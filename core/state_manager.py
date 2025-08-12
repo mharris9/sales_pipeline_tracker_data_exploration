@@ -378,6 +378,18 @@ class StateManager:
                     df = self._state['data'].get('current_df')
                     if isinstance(df, pd.DataFrame):
                         state_to_save['data.current_df'] = df.to_dict('records')
+                elif path == 'filters':
+                    # Save active filters
+                    active_filters = self._state['filters'].get('active_filters', {})
+                    state_to_save['filters.active_filters'] = active_filters
+                    
+                    # Save filter configs
+                    filter_configs = self._state['filters'].get('filter_configs', {})
+                    state_to_save['filters.filter_configs'] = filter_configs
+                    
+                    # Save filter results
+                    filter_results = self._state['filters'].get('filter_results', {})
+                    state_to_save['filters.filter_results'] = filter_results
         else:
             # Save all state
             flattened = self._flatten_dict(self._state)
@@ -427,84 +439,95 @@ class StateManager:
             state_data = {k: v for k, v in saved_state.items() 
                          if k not in ['version', 'timestamp']}
         
-        if partial:
-            # Get paths to restore
-            paths = state_data.get('_paths', [])
-            if not paths:
-                # If no paths specified, use all non-underscore paths
-                paths = [p for p in state_data.keys() if not p.startswith('_')]
-            
-            # Update only specified paths
-            for path in paths:
-                value = state_data.get(path)
-                if value is not None:
-                    # Handle special types
-                    if isinstance(value, list):
-                        if path.endswith('_df') or path.endswith('current_df'):
-                            # Convert list back to DataFrame
-                            value = pd.DataFrame(value)
-                        elif path.endswith('_series'):
-                            # Convert list back to Series
-                            value = pd.Series(value)
-                        elif path.endswith('_array'):
-                            # Convert list back to ndarray
-                            value = np.array(value)
-                    elif isinstance(value, str):
-                        if path.endswith('.type'):
-                            # Convert string back to DataType enum
-                            value = DataType(value)
-                        elif path.endswith('_date') or path.endswith('earliest') or path.endswith('latest'):
-                            # Convert ISO string back to Timestamp
-                            try:
-                                value = pd.Timestamp(value)
-                            except:
-                                pass
-                    elif isinstance(value, dict) and path.endswith('_df'):
-                        # Handle nested DataFrame
-                        value = pd.DataFrame(value)
-                    
-                    # Update state
-                    parts = path.split('.')
-                    current = self._state
-                    for part in parts[:-1]:
-                        if part not in current:
-                            current[part] = {}
-                        current = current[part]
-                    current[parts[-1]] = value
-                    
-                    # Handle special cases
-                    if path == 'data.data_loaded':
-                        self._state['data']['data_loaded'] = bool(value)
-                    elif path == 'data.current_df':
-                        self._state['data']['data_loaded'] = True
-                    elif path == 'data':
-                        # Ensure data_loaded is properly set
-                        if 'data_loaded' in value:
-                            self._state['data']['data_loaded'] = bool(value['data_loaded'])
-                        if 'current_df' in value:
-                            self._state['data']['data_loaded'] = True
-                    
-                    logger.info(f"Restored state at {path}")
-        else:
-            # Replace all state
-            self._state = {}  # Clear current state
-            for path, value in self._flatten_dict(state_data).items():
-                if path == 'paths':  # Skip paths list
-                    continue
-                    
+        # Get paths to restore
+        paths = state_data.get('_paths', [])
+        if not paths:
+            # If no paths specified, use all non-underscore paths
+            paths = [p for p in state_data.keys() if not p.startswith('_')]
+        
+        # Update state
+        for path in paths:
+            value = state_data.get(path)
+            if value is not None:
                 # Handle special types
-                if isinstance(value, list) and path.endswith('_df'):
-                    # Convert list back to DataFrame
+                if isinstance(value, list):
+                    if path.endswith('_df') or path.endswith('current_df'):
+                        # Convert list back to DataFrame
+                        value = pd.DataFrame(value)
+                    elif path.endswith('_series'):
+                        # Convert list back to Series
+                        value = pd.Series(value)
+                    elif path.endswith('_array'):
+                        # Convert list back to ndarray
+                        value = np.array(value)
+                elif isinstance(value, str):
+                    if path.endswith('.type'):
+                        # Convert string back to DataType enum
+                        value = DataType(value)
+                    elif path.endswith('_date') or path.endswith('earliest') or path.endswith('latest'):
+                        # Convert ISO string back to Timestamp
+                        try:
+                            value = pd.Timestamp(value)
+                        except:
+                            pass
+                elif isinstance(value, dict) and path.endswith('_df'):
+                    # Handle nested DataFrame
                     value = pd.DataFrame(value)
                 
                 # Update state
                 parts = path.split('.')
                 current = self._state
                 for part in parts[:-1]:
-                    current = current.setdefault(part, {})
+                    if part not in current:
+                        current[part] = {}
+                    current = current[part]
                 current[parts[-1]] = value
+                
+                # Handle special cases
+                if path == 'data.data_loaded':
+                    self._state['data']['data_loaded'] = bool(value)
+                elif path == 'data.current_df':
+                    self._state['data']['data_loaded'] = True
+                elif path == 'data':
+                    # Ensure data_loaded is properly set
+                    if 'data_loaded' in value:
+                        self._state['data']['data_loaded'] = bool(value['data_loaded'])
+                    if 'current_df' in value:
+                        self._state['data']['data_loaded'] = True
+                
+                logger.info(f"Restored state at {path}")
+        
+        # Initialize any missing top-level paths
+        for path in ['data', 'filters', 'view']:
+            if path not in self._state:
+                self._state[path] = {}
             
-            logger.info("Restored complete state")
+            # Initialize default values
+            if path == 'data':
+                if 'data_loaded' not in self._state[path]:
+                    self._state[path]['data_loaded'] = False
+                if 'current_df' not in self._state[path]:
+                    self._state[path]['current_df'] = None
+                if 'data_info' not in self._state[path]:
+                    self._state[path]['data_info'] = {}
+                if 'column_types' not in self._state[path]:
+                    self._state[path]['column_types'] = {}
+            elif path == 'filters':
+                if 'active_filters' not in self._state[path]:
+                    self._state[path]['active_filters'] = {}
+                if 'filter_configs' not in self._state[path]:
+                    self._state[path]['filter_configs'] = {}
+                if 'filter_results' not in self._state[path]:
+                    self._state[path]['filter_results'] = {}
+            elif path == 'view':
+                if 'current_tab' not in self._state[path]:
+                    self._state[path]['current_tab'] = None
+                if 'display_options' not in self._state[path]:
+                    self._state[path]['display_options'] = {}
+                if 'ui_settings' not in self._state[path]:
+                    self._state[path]['ui_settings'] = {}
+        
+        logger.info("Restored state")
     
     def _validate_widget_state(self, path: str, value: Any, old_value: Any) -> Any:
         """

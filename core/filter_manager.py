@@ -16,8 +16,20 @@ class FilterManager:
     
     def __init__(self):
         """Initialize the FilterManager."""
-        self.filters: Dict[str, Dict[str, Any]] = {}
-        self.active_filters: Dict[str, bool] = {}
+        # Get state manager instance
+        if not hasattr(st.session_state, 'state_manager'):
+            raise RuntimeError("StateManager not initialized")
+        self.state_manager = st.session_state.state_manager
+        
+        # Initialize state if needed
+        if not self.state_manager.get_state('filters.filter_configs'):
+            self.state_manager.update_state('filters.filter_configs', {})
+        if not self.state_manager.get_state('filters.active_filters'):
+            self.state_manager.update_state('filters.active_filters', {})
+        if not self.state_manager.get_state('filters.filter_results'):
+            self.state_manager.update_state('filters.filter_results', {})
+        if not self.state_manager.get_state('filters.filter_summary'):
+            self.state_manager.update_state('filters.filter_summary', {})
         
     def create_filters(self, df: pd.DataFrame, column_types: Dict[str, DataType]) -> None:
         """
@@ -27,25 +39,46 @@ class FilterManager:
             df: The DataFrame to create filters for
             column_types: Dictionary mapping column names to data types
         """
-        self.filters = {}
-        self.active_filters = {}
+        filter_configs = {}
+        active_filters = {}
         
         for column, data_type in column_types.items():
             if column not in df.columns:
                 continue
                 
-            self.active_filters[column] = False
+            active_filters[column] = False
             
             if data_type == DataType.CATEGORICAL:
-                self.filters[column] = self._create_categorical_filter(df[column])
+                filter_configs[column] = self._create_categorical_filter(df[column])
             elif data_type == DataType.NUMERICAL:
-                self.filters[column] = self._create_numerical_filter(df[column])
+                filter_configs[column] = self._create_numerical_filter(df[column])
             elif data_type == DataType.DATE:
-                self.filters[column] = self._create_date_filter(df[column])
+                filter_configs[column] = self._create_date_filter(df[column])
             elif data_type == DataType.TEXT:
-                self.filters[column] = self._create_text_filter(df[column])
+                filter_configs[column] = self._create_text_filter(df[column])
             elif data_type == DataType.BOOLEAN:
-                self.filters[column] = self._create_boolean_filter(df[column])
+                filter_configs[column] = self._create_boolean_filter(df[column])
+            
+            # Convert any non-serializable values to serializable types
+            if data_type == DataType.DATE:
+                filter_configs[column]['min_date'] = filter_configs[column]['min_date'].isoformat()
+                filter_configs[column]['max_date'] = filter_configs[column]['max_date'].isoformat()
+                filter_configs[column]['selected_min_date'] = filter_configs[column]['selected_min_date'].isoformat()
+                filter_configs[column]['selected_max_date'] = filter_configs[column]['selected_max_date'].isoformat()
+            elif data_type == DataType.NUMERICAL:
+                filter_configs[column]['min_value'] = float(filter_configs[column]['min_value'])
+                filter_configs[column]['max_value'] = float(filter_configs[column]['max_value'])
+                filter_configs[column]['selected_min'] = float(filter_configs[column]['selected_min'])
+                filter_configs[column]['selected_max'] = float(filter_configs[column]['selected_max'])
+                if 'percentiles' in filter_configs[column]:
+                    filter_configs[column]['percentiles'] = {
+                        k: float(v) for k, v in filter_configs[column]['percentiles'].items()
+                    }
+        
+        # Update state
+        self.state_manager.update_state('filters.filter_configs', filter_configs)
+        self.state_manager.update_state('filters.active_filters', active_filters)
+        self.state_manager.update_state('filters.filter_results', {})
     
     def _create_categorical_filter(self, series: pd.Series) -> Dict[str, Any]:
         """Create filter configuration for categorical data."""
@@ -141,19 +174,25 @@ class FilterManager:
             column: Column name
             data_type: Data type of the column
         """
-        if column not in self.filters:
+        filter_configs = self.state_manager.get_state('filters.filter_configs', {})
+        if column not in filter_configs:
             return
         
-        filter_config = self.filters[column]
+        filter_config = filter_configs[column]
+        active_filters = self.state_manager.get_state('filters.active_filters', {})
         
         # Filter activation checkbox
-        self.active_filters[column] = st.checkbox(
+        is_active = st.checkbox(
             f"Filter {column}", 
-            value=self.active_filters.get(column, False),
+            value=active_filters.get(column, False),
             key=f"filter_active_{column}"
         )
         
-        if not self.active_filters[column]:
+        # Update active state
+        active_filters[column] = is_active
+        self.state_manager.update_state('filters.active_filters', active_filters)
+        
+        if not is_active:
             return
         
         # Render specific filter UI based on data type
@@ -167,6 +206,10 @@ class FilterManager:
             self._render_text_filter_ui(column, filter_config)
         elif data_type == DataType.BOOLEAN:
             self._render_boolean_filter_ui(column, filter_config)
+        
+        # Update filter config
+        filter_configs[column] = filter_config
+        self.state_manager.update_state('filters.filter_configs', filter_configs)
     
     def _render_categorical_filter_ui(self, column: str, filter_config: Dict[str, Any]) -> None:
         """Render UI for categorical filters."""
@@ -433,51 +476,52 @@ class FilterManager:
         filtered_df = df.copy()
         original_count = len(filtered_df)
         
-        # Store the original DataFrame in session state
-        if 'original_df' not in st.session_state:
-            st.session_state.original_df = df.copy()
+        # Store the original DataFrame
+        self.state_manager.update_state('filters.original_df', df.copy())
+        
+        # Get filter state
+        active_filters = self.state_manager.get_state('filters.active_filters', {})
+        filter_configs = self.state_manager.get_state('filters.filter_configs', {})
         
         # Apply filters sequentially and track changes
-        filter_debug_info = []
+        filter_results = {}
         
-        for column, is_active in self.active_filters.items():
-            if not is_active or column not in self.filters or column not in df.columns:
+        for column, is_active in active_filters.items():
+            if not is_active or column not in filter_configs or column not in df.columns:
                 continue
             
-            filter_config = self.filters[column]
+            filter_config = filter_configs[column]
             pre_filter_count = len(filtered_df)
             filtered_df = self._apply_single_filter(filtered_df, column, filter_config)
             post_filter_count = len(filtered_df)
             
             # Collect debug info
-            debug_info = {
-                'column': column,
+            filter_results[column] = {
                 'type': filter_config['type'],
                 'pre_count': pre_filter_count,
                 'post_count': post_filter_count,
-                'filtered_count': pre_filter_count - post_filter_count
+                'filtered_count': post_filter_count,  # This is the number of records that match the filter
+                'total_count': original_count
             }
             
             if filter_config['type'] == 'categorical':
-                debug_info.update({
+                filter_results[column].update({
                     'mode': filter_config['filter_type'],
                     'selected_values': filter_config['selected_values'],
                     'value_counts': filtered_df[column].value_counts().to_dict()
                 })
-            
-            filter_debug_info.append(debug_info)
         
-        # Store debug info in session state
-        st.session_state.filter_debug_info = filter_debug_info
-        st.session_state.filter_summary = {
+        # Store debug info in state
+        self.state_manager.update_state('filters.filter_results', filter_results)
+        self.state_manager.update_state('filters.filter_summary', {
             'original_count': original_count,
             'filtered_count': len(filtered_df),
             'total_filtered': original_count - len(filtered_df)
-        }
+        })
         
         # Display debug information
-        for info in filter_debug_info:
-            st.write(f"Filter applied to {info['column']}:")
+        for column, info in filter_results.items():
+            st.write(f"Filter applied to {column}:")
             st.write(f"- Filter type: {info['type']}")
             if info['type'] == 'categorical':
                 st.write(f"- Mode: {info['mode']}")
@@ -650,10 +694,14 @@ class FilterManager:
     
     def clear_all_filters(self) -> None:
         """Clear all active filters and reset filter configurations."""
+        # Get filter state
+        active_filters = self.state_manager.get_state('filters.active_filters', {})
+        filter_configs = self.state_manager.get_state('filters.filter_configs', {})
+        
         # Clear active states and session state
-        for column in self.active_filters:
+        for column in active_filters:
             # Clear active state
-            self.active_filters[column] = False
+            active_filters[column] = False
             
             # Clear checkbox state in session
             checkbox_key = f"filter_active_{column}"
@@ -661,8 +709,8 @@ class FilterManager:
                 st.session_state[checkbox_key] = False
             
             # Reset filter configurations to default
-            if column in self.filters:
-                filter_config = self.filters[column]
+            if column in filter_configs:
+                filter_config = filter_configs[column]
                 state_key = f"filter_state_{column}"
                 
                 if filter_config['type'] == 'categorical':
@@ -716,21 +764,90 @@ class FilterManager:
                             'filter_type': 'include',
                             'selected_values': [True, False]
                         }
-                        
+                
+                # Update filter config
+                filter_configs[column] = filter_config
+        
+        # Update state
+        self.state_manager.update_state('filters.active_filters', active_filters)
+        self.state_manager.update_state('filters.filter_configs', filter_configs)
+        self.state_manager.update_state('filters.filter_results', {})
+        self.state_manager.update_state('filters.filter_summary', {})
+        
         # Clear any remaining filter-related session state
         for key in list(st.session_state.keys()):
             if key.startswith('filter_'):
                 del st.session_state[key]
     
+    def update_filter(self, column: str, filter_config: Dict[str, Any]) -> None:
+        """
+        Update a filter configuration.
+        
+        Args:
+            column: Column name
+            filter_config: New filter configuration
+        """
+        # Get current filter configs
+        filter_configs = self.state_manager.get_state('filters.filter_configs', {})
+        active_filters = self.state_manager.get_state('filters.active_filters', {})
+        
+        # Get current filter config
+        current_config = filter_configs.get(column, {})
+        
+        # Merge new config with current config
+        merged_config = current_config.copy()
+        merged_config.update(filter_config)
+        
+        # Convert any non-serializable values to serializable types
+        if merged_config['type'] == 'date':
+            if isinstance(merged_config.get('selected_min_date'), pd.Timestamp):
+                merged_config['selected_min_date'] = merged_config['selected_min_date'].isoformat()
+            if isinstance(merged_config.get('selected_max_date'), pd.Timestamp):
+                merged_config['selected_max_date'] = merged_config['selected_max_date'].isoformat()
+        elif merged_config['type'] == 'numerical':
+            if 'selected_min' in merged_config:
+                merged_config['selected_min'] = float(merged_config['selected_min'])
+            if 'selected_max' in merged_config:
+                merged_config['selected_max'] = float(merged_config['selected_max'])
+        
+        # Update filter config and active state
+        filter_configs[column] = merged_config
+        active_filters[column] = True
+        
+        # Update state
+        self.state_manager.update_state('filters.filter_configs', filter_configs)
+        self.state_manager.update_state('filters.active_filters', active_filters)
+        
+        # Apply filters to update results
+        df = self.state_manager.get_state('data.original_df')
+        if df is not None:
+            self.apply_filters(df)
+    
     def get_filter_state(self) -> Dict[str, Any]:
         """Get the current filter state for serialization."""
         return {
-            'filters': self.filters.copy(),
-            'active_filters': self.active_filters.copy()
+            'filter_configs': self.state_manager.get_state('filters.filter_configs', {}),
+            'active_filters': self.state_manager.get_state('filters.active_filters', {}),
+            'filter_results': self.state_manager.get_state('filters.filter_results', {}),
+            'filter_summary': self.state_manager.get_state('filters.filter_summary', {})
         }
     
     def set_filter_state(self, state: Dict[str, Any]) -> None:
         """Set the filter state from serialized data."""
-        self.filters = state.get('filters', {})
-        self.active_filters = state.get('active_filters', {})
+        # Get current state
+        current_configs = self.state_manager.get_state('filters.filter_configs', {})
+        current_active = self.state_manager.get_state('filters.active_filters', {})
+        
+        # Merge new state with current state
+        filter_configs = current_configs.copy()
+        filter_configs.update(state.get('filter_configs', {}))
+        
+        active_filters = current_active.copy()
+        active_filters.update(state.get('active_filters', {}))
+        
+        # Update state
+        self.state_manager.update_state('filters.filter_configs', filter_configs)
+        self.state_manager.update_state('filters.active_filters', active_filters)
+        self.state_manager.update_state('filters.filter_results', state.get('filter_results', {}))
+        self.state_manager.update_state('filters.filter_summary', state.get('filter_summary', {}))
 
