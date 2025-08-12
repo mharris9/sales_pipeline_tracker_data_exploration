@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 
 from config.settings import CHART_HEIGHT, CHART_THEME, COLOR_PALETTE
 from utils.data_types import DataType, get_compatible_columns, calculate_statistics
+from utils.column_mapping import column_mapper
 
 class ReportEngine:
     """
@@ -225,8 +226,8 @@ class ReportEngine:
                     stats = calculate_statistics(group_df[column], col_type)
                     
                     row = {
-                        'Group': group_value,
-                        'Column': column,
+                        'Group': str(group_value),
+                        'Column': column_mapper.map_column_name(column),
                         'Data Type': col_type.value,
                         'Count': f"{stats.get('count', 0):,}",
                         'Non-Null': f"{stats.get('non_null_count', 0):,}",
@@ -276,7 +277,7 @@ class ReportEngine:
                 stats = calculate_statistics(df_deduplicated[column], col_type)
                 
                 row = {
-                    'Column': column,
+                    'Column': column_mapper.map_column_name(column),
                     'Data Type': col_type.value,
                     'Count': f"{stats.get('count', 0):,}",
                     'Non-Null': f"{stats.get('non_null_count', 0):,}",
@@ -408,10 +409,13 @@ class ReportEngine:
             if above_count > 0:
                 title_suffix = f" (Upper Limit: {upper_limit_label}, {above_count:,} values grouped)"
         
+        # Create user-friendly labels
+        x_display = column_mapper.map_column_name(x_column)
+        
         # Update x-axis to show the upper limit clearly
         layout_updates = {
-            'title': f"Distribution of {x_column}{title_suffix}",
-            'xaxis_title': x_column,
+            'title': f"Distribution of {x_display}{title_suffix}",
+            'xaxis_title': x_display,
             'yaxis_title': "Frequency",
             'template': CHART_THEME,
             'height': CHART_HEIGHT,
@@ -510,10 +514,25 @@ class ReportEngine:
             }
             sort_suffix = sort_labels.get(sort_by, '')
         
+        # Create user-friendly labels
+        x_display = column_mapper.map_column_name(x_column)
+        y_display = column_mapper.map_column_name(y_column)
+        agg_display = aggregation.title()
+        
+        # Map aggregation to friendly terms
+        agg_mapping = {
+            'Sum': 'Total',
+            'Mean': 'Average',
+            'Count': 'Count of',
+            'Min': 'Minimum',
+            'Max': 'Maximum'
+        }
+        agg_friendly = agg_mapping.get(agg_display, agg_display)
+        
         fig.update_layout(
-            title=f"{aggregation.title()} of {y_column} by {x_column}{sort_suffix} (Most Recent Snapshots)",
-            xaxis_title=x_column,
-            yaxis_title=f"{aggregation.title()} of {y_column}",
+            title=f"{agg_friendly} {y_display} by {x_display}{sort_suffix} (Most Recent Snapshots)",
+            xaxis_title=x_display,
+            yaxis_title=f"{agg_friendly} {y_display}",
             template=CHART_THEME,
             height=CHART_HEIGHT
         )
@@ -577,10 +596,14 @@ class ReportEngine:
             
             fig.add_trace(go.Scatter(**scatter_kwargs))
         
+        # Create user-friendly labels
+        x_display = column_mapper.map_column_name(x_column)
+        y_display = column_mapper.map_column_name(y_column)
+        
         fig.update_layout(
-            title=f"{y_column} vs {x_column} (Most Recent Snapshots)",
-            xaxis_title=x_column,
-            yaxis_title=y_column,
+            title=f"{y_display} vs {x_display} (Most Recent Snapshots)",
+            xaxis_title=x_display,
+            yaxis_title=y_display,
             template=CHART_THEME,
             height=CHART_HEIGHT
         )
@@ -674,6 +697,13 @@ class ReportEngine:
             hoverongaps=False
         ))
         
+        # Create user-friendly column labels for the heatmap
+        display_columns = [column_mapper.map_column_name(col) for col in corr_matrix.columns]
+        
+        # Update the heatmap with friendly labels
+        fig.data[0].x = display_columns
+        fig.data[0].y = display_columns
+        
         fig.update_layout(
             title="Correlation Matrix (Most Recent Snapshots)",
             template=CHART_THEME,
@@ -745,10 +775,14 @@ class ReportEngine:
             }
             sort_suffix = sort_labels.get(sort_by, '')
         
+        # Create user-friendly labels
+        x_display = column_mapper.map_column_name(x_column)
+        y_display = column_mapper.map_column_name(y_column)
+        
         fig.update_layout(
-            title=f"Distribution of {y_column} by {x_column}{sort_suffix} (Most Recent Snapshots)",
-            xaxis_title=x_column,
-            yaxis_title=y_column,
+            title=f"Distribution of {y_display} by {x_display}{sort_suffix} (Most Recent Snapshots)",
+            xaxis_title=x_display,
+            yaxis_title=y_display,
             template=CHART_THEME,
             height=CHART_HEIGHT
         )

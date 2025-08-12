@@ -25,6 +25,7 @@ from core.report_engine import ReportEngine
 from core.outlier_manager import OutlierManager
 from utils.export_utils import ExportManager
 from utils.data_types import DataType
+from utils.column_mapping import column_mapper
 
 
 def create_auto_sized_dataframe_config(df: pd.DataFrame, min_width: int = 80, max_width: int = 300) -> Dict[str, Any]:
@@ -339,6 +340,7 @@ def render_groupby_section():
         "Group data by:",
         options=[None] + groupby_columns,
         index=0,
+        format_func=lambda x: "None" if x is None else column_mapper.map_column_name(x),
         help="Select a column to group the analysis by"
     )
     
@@ -389,6 +391,7 @@ def render_reports_section():
                     config['x_axis'] = st.selectbox(
                         "X-Axis:",
                         options=compatible_x,
+                        format_func=lambda x: column_mapper.map_column_name(x),
                         help="Select the column for X-axis"
                     )
                 else:
@@ -405,6 +408,7 @@ def render_reports_section():
                     config['y_axis'] = st.selectbox(
                         "Y-Axis:",
                         options=compatible_y,
+                        format_func=lambda x: column_mapper.map_column_name(x),
                         help="Select the column for Y-axis"
                     )
                 else:
@@ -547,6 +551,7 @@ def render_reports_section():
             "Select Columns:",
             options=all_columns,
             default=default_columns[:10] if len(default_columns) > 10 else default_columns,
+            format_func=lambda x: column_mapper.map_column_name(x),
             help="Choose which columns to include in the analysis"
         )
     
