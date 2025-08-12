@@ -6,9 +6,14 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Any
 import plotly.graph_objects as go
+import logging
 
 # Configure Streamlit page
 from config.settings import APP_TITLE, APP_ICON, LAYOUT
+
+# Configure logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 st.set_page_config(
     page_title=APP_TITLE,
@@ -23,6 +28,7 @@ from core.filter_manager import FilterManager
 from core.feature_engine import FeatureEngine
 from core.report_engine import ReportEngine
 from core.outlier_manager import OutlierManager
+from core.state_manager import StateManager
 from utils.export_utils import ExportManager
 from utils.data_types import DataType
 from utils.column_mapping import column_mapper
@@ -168,35 +174,83 @@ def _fix_column_sync():
 # Initialize session state
 def initialize_session_state():
     """Initialize Streamlit session state variables."""
+    # Initialize state manager if not already present
+    if 'state_manager' not in st.session_state:
+        state_manager = StateManager()
+        
+        # Register core state containers
+        state_manager.register_extension('data', {
+            'data_handler': DataHandler(),
+            'current_df': None,
+            'data_loaded': False,
+            'data_info': {}
+        })
+        
+        state_manager.register_extension('filters', {
+            'filter_manager': FilterManager(),
+            'active_filters': {},
+            'filter_configs': {},
+            'filter_results': {}
+        })
+        
+        state_manager.register_extension('features', {
+            'feature_engine': FeatureEngine(),
+            'computed_features': {},
+            'feature_configs': {}
+        })
+        
+        state_manager.register_extension('reports', {
+            'report_engine': ReportEngine(),
+            'current_report': None,
+            'report_configs': {},
+            'report_results': {}
+        })
+        
+        state_manager.register_extension('exports', {
+            'export_manager': ExportManager(),
+            'export_history': []
+        })
+        
+        state_manager.register_extension('outliers', {
+            'outlier_manager': OutlierManager(),
+            'settings': {'outliers_enabled': False},
+            'exclusion_info': {'outliers_excluded': False}
+        })
+        
+        # Register state validators
+        state_manager.register_validator('data.current_df', lambda df: isinstance(df, (pd.DataFrame, type(None))))
+        state_manager.register_validator('data.data_loaded', lambda x: isinstance(x, bool))
+        state_manager.register_validator('outliers.settings', lambda x: isinstance(x, dict) and 'outliers_enabled' in x)
+        
+        # Register state watchers for debugging
+        state_manager.register_watcher('data.current_df', lambda old, new: logger.info(f"DataFrame updated: {len(new)} rows"))
+        state_manager.register_watcher('filters.active_filters', lambda old, new: logger.info(f"Active filters changed: {new}"))
+        
+        # Store initial state
+        st.session_state.state_manager = state_manager
+    
+    # For backward compatibility during transition
+    state_manager = st.session_state.state_manager
     if 'data_handler' not in st.session_state:
-        st.session_state.data_handler = DataHandler()
-    
+        st.session_state.data_handler = state_manager.get_state('data.data_handler')
     if 'filter_manager' not in st.session_state:
-        st.session_state.filter_manager = FilterManager()
-    
+        st.session_state.filter_manager = state_manager.get_state('filters.filter_manager')
     if 'feature_engine' not in st.session_state:
-        st.session_state.feature_engine = FeatureEngine()
-    
+        st.session_state.feature_engine = state_manager.get_state('features.feature_engine')
     if 'report_engine' not in st.session_state:
-        st.session_state.report_engine = ReportEngine()
-    
+        st.session_state.report_engine = state_manager.get_state('reports.report_engine')
     if 'export_manager' not in st.session_state:
-        st.session_state.export_manager = ExportManager()
-    
+        st.session_state.export_manager = state_manager.get_state('exports.export_manager')
     if 'outlier_manager' not in st.session_state:
-        st.session_state.outlier_manager = OutlierManager()
-    
+        st.session_state.outlier_manager = state_manager.get_state('outliers.outlier_manager')
     if 'current_df' not in st.session_state:
-        st.session_state.current_df = None
-    
+        st.session_state.current_df = state_manager.get_state('data.current_df')
     if 'data_loaded' not in st.session_state:
-        st.session_state.data_loaded = False
-    
+        st.session_state.data_loaded = state_manager.get_state('data.data_loaded')
     if 'outlier_settings' not in st.session_state:
-        st.session_state.outlier_settings = {'outliers_enabled': False}
-    
+        st.session_state.outlier_settings = state_manager.get_state('outliers.settings')
     if 'exclusion_info' not in st.session_state:
-        st.session_state.exclusion_info = {'outliers_excluded': False}
+        st.session_state.exclusion_info = state_manager.get_state('outliers.exclusion_info')
 
 def render_header():
     """Render the application header."""
@@ -207,8 +261,19 @@ def render_header():
     if st.session_state.data_loaded and st.session_state.current_df is not None:
         col1, col2, col3, col4 = st.columns(4)
         
+        # Use filter summary from session state
+        filter_summary = st.session_state.get('filter_summary', {
+            'original_count': len(st.session_state.current_df),
+            'filtered_count': len(st.session_state.current_df),
+            'total_filtered': 0
+        })
+        
         with col1:
-            st.metric("Total Records", f"{len(st.session_state.current_df):,}")
+            st.metric(
+                "Total Records",
+                f"{filter_summary['filtered_count']:,}",
+                delta=f"{-filter_summary['total_filtered']:,}" if filter_summary['total_filtered'] > 0 else None
+            )
         
         with col2:
             st.metric("Total Columns", len(st.session_state.current_df.columns))

@@ -75,7 +75,8 @@ class StateManager:
                 'original_df': None,
                 'filtered_df': None,
                 'column_types': {},
-                'data_info': {}
+                'data_info': {},
+                'data_loaded': False
             },
             'filters': {
                 'active_filters': {},
@@ -94,6 +95,9 @@ class StateManager:
         self._state_validators: Dict[str, Callable] = {}
         self._state_watchers: Dict[str, List[Callable]] = {}
         
+        # Store class instances separately
+        self._instances = {}
+        
         logger.info("State manager initialized")
     
     def register_extension(self, name: str, initial_state: Dict[str, Any] = None) -> None:
@@ -104,9 +108,34 @@ class StateManager:
             name: Name of the extension
             initial_state: Initial state for the extension
         """
-        if name not in self._state:
-            self._state[name] = initial_state or {}
-            logger.info(f"Registered new state extension: {name}")
+        if initial_state is None:
+            initial_state = {}
+        
+        # Extract class instances and store them separately
+        instances = {}
+        serializable_state = {}
+        
+        for key, value in initial_state.items():
+            if hasattr(value, '__class__') and value.__class__.__name__ in [
+                'DataHandler', 'FilterManager', 'FeatureEngine', 
+                'ReportEngine', 'OutlierManager', 'ExportManager'
+            ]:
+                instances[key] = value
+            else:
+                serializable_state[key] = value
+        
+        # Store instances
+        if instances:
+            self._instances[name] = instances
+        
+        # Store serializable state
+        if name in self._state:
+            logger.warning(f"Extension {name} already exists. Updating state.")
+            self._state[name].update(serializable_state)
+        else:
+            self._state[name] = serializable_state
+            
+        logger.info(f"Registered extension: {name}")
     
     def register_validator(self, state_path: str, validator: Callable) -> None:
         """
@@ -206,8 +235,17 @@ class StateManager:
             State value or default
         """
         try:
+            # Check for class instance first
+            parts = path.split('.')
+            if len(parts) >= 2:
+                container = parts[0]
+                key = parts[1]
+                if container in self._instances and key in self._instances[container]:
+                    return self._instances[container][key]
+            
+            # Get from regular state
             current = self._state
-            for part in path.split('.'):
+            for part in parts:
                 current = current[part]
             
             # Handle special types
