@@ -30,6 +30,34 @@ class DataHandler:
         self.column_stats: Dict[str, Dict[str, Any]] = {}
         self.file_info: Dict[str, Any] = {}
         
+    def load_dataframe(self, df: pd.DataFrame) -> bool:
+        """
+        Load data from a pandas DataFrame (for testing purposes).
+        
+        Args:
+            df: Pandas DataFrame to load
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            self.df_raw = df.copy()
+            self.file_info = {
+                'name': 'test_data.csv',
+                'size': len(df),
+                'type': 'DataFrame',
+                'columns': len(df.columns)
+            }
+            
+            # Process the data
+            self._process_data()
+            
+            return True
+            
+        except Exception as e:
+            st.error(f"Error loading DataFrame: {str(e)}")
+            return False
+
     def load_file(self, uploaded_file) -> bool:
         """
         Load data from uploaded CSV or XLSX file.
@@ -103,6 +131,10 @@ class DataHandler:
     
     def _detect_and_convert_types(self) -> None:
         """Detect and convert data types for all columns."""
+        # Don't process if dataframe is empty
+        if self.df_processed is None or self.df_processed.empty:
+            return
+            
         for column in self.df_processed.columns:
             # Detect data type
             detected_type = detect_data_type(self.df_processed[column], column)
@@ -211,31 +243,47 @@ class DataHandler:
         return column_info
     
     def get_categorical_columns(self) -> List[str]:
-        """Get list of categorical columns."""
+        """Get list of categorical columns that exist in the current dataframe."""
+        if self.df_processed is None:
+            return []
+        
+        current_columns = set(self.df_processed.columns)
         return [
             col for col, dtype in self.column_types.items() 
-            if dtype == DataType.CATEGORICAL
+            if dtype == DataType.CATEGORICAL and col in current_columns
         ]
     
     def get_numerical_columns(self) -> List[str]:
-        """Get list of numerical columns."""
+        """Get list of numerical columns that exist in the current dataframe."""
+        if self.df_processed is None:
+            return []
+        
+        current_columns = set(self.df_processed.columns)
         return [
             col for col, dtype in self.column_types.items() 
-            if dtype == DataType.NUMERICAL
+            if dtype == DataType.NUMERICAL and col in current_columns
         ]
     
     def get_date_columns(self) -> List[str]:
-        """Get list of date columns."""
+        """Get list of date columns that exist in the current dataframe."""
+        if self.df_processed is None:
+            return []
+        
+        current_columns = set(self.df_processed.columns)
         return [
             col for col, dtype in self.column_types.items() 
-            if dtype == DataType.DATE
+            if dtype == DataType.DATE and col in current_columns
         ]
     
     def get_text_columns(self) -> List[str]:
-        """Get list of text columns."""
+        """Get list of text columns that exist in the current dataframe."""
+        if self.df_processed is None:
+            return []
+        
+        current_columns = set(self.df_processed.columns)
         return [
             col for col, dtype in self.column_types.items() 
-            if dtype == DataType.TEXT
+            if dtype == DataType.TEXT and col in current_columns
         ]
     
     def validate_sales_pipeline_data(self) -> Dict[str, Any]:

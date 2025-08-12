@@ -624,14 +624,17 @@ class ReportEngine:
         if not y_column or y_column not in df.columns:
             raise ValueError("Y-axis column not specified or not found")
         
+        # Use most recent snapshots to avoid double counting opportunities
+        df_deduplicated = self._get_most_recent_snapshots(df)
+        
         fig = go.Figure()
         
-        if group_by_column and group_by_column in df.columns:
-            for i, group_value in enumerate(df[group_by_column].unique()):
+        if group_by_column and group_by_column in df_deduplicated.columns:
+            for i, group_value in enumerate(df_deduplicated[group_by_column].unique()):
                 if pd.isna(group_value):
                     continue
                 
-                group_data = df[df[group_by_column] == group_value]
+                group_data = df_deduplicated[df_deduplicated[group_by_column] == group_value]
                 agg_data = group_data.groupby(x_column)[y_column].agg(aggregation).reset_index()
                 agg_data = agg_data.sort_values(x_column)
                 
@@ -643,7 +646,7 @@ class ReportEngine:
                     line=dict(color=COLOR_PALETTE[i % len(COLOR_PALETTE)])
                 ))
         else:
-            agg_data = df.groupby(x_column)[y_column].agg(aggregation).reset_index()
+            agg_data = df_deduplicated.groupby(x_column)[y_column].agg(aggregation).reset_index()
             agg_data = agg_data.sort_values(x_column)
             
             fig.add_trace(go.Scatter(
@@ -653,10 +656,13 @@ class ReportEngine:
                 line=dict(color=COLOR_PALETTE[0])
             ))
         
+        x_display = column_mapper.map_column_name(x_column)
+        y_display = column_mapper.map_column_name(y_column)
+        
         fig.update_layout(
-            title=f"{aggregation.title()} of {y_column} over {x_column}",
-            xaxis_title=x_column,
-            yaxis_title=f"{aggregation.title()} of {y_column}",
+            title=f"{aggregation.title()} of {y_display} over {x_display}",
+            xaxis_title=x_display,
+            yaxis_title=f"{aggregation.title()} of {y_display}",
             template=CHART_THEME,
             height=CHART_HEIGHT
         )
@@ -791,7 +797,7 @@ class ReportEngine:
     
     def generate_time_series(self, df: pd.DataFrame, 
                             config: Dict[str, Any]) -> Tuple[go.Figure, None]:
-        """Generate time series visualization."""
+        """Generate time series visualization with proper deduplication for pipeline snapshots."""
         x_column = config.get('x_axis')
         y_column = config.get('y_axis')
         group_by_column = config.get('group_by_column')
@@ -804,11 +810,22 @@ class ReportEngine:
         if not y_column or y_column not in df.columns:
             raise ValueError("Y-axis column not specified or not found")
         
-        # Ensure x_column is datetime
+        # Import here to avoid circular imports
+        from config.settings import ID_COLUMN, SNAPSHOT_DATE_COLUMN
+        
+        # Prepare dataframe
         df_temp = df.copy()
         df_temp[x_column] = pd.to_datetime(df_temp[x_column])
         
-        # Resample data by time period
+        # Check if we have opportunity ID and snapshot date columns for deduplication
+        id_col = self._find_column(df_temp, ID_COLUMN)
+        snapshot_col = self._find_column(df_temp, SNAPSHOT_DATE_COLUMN)
+        
+        if id_col and snapshot_col and id_col in df_temp.columns and snapshot_col in df_temp.columns:
+            # Deduplicate by keeping only the most recent snapshot for each opportunity within each time period
+            df_temp = self._deduplicate_for_time_series(df_temp, x_column, y_column, id_col, snapshot_col, time_period)
+        
+        # Set index for resampling
         df_temp.set_index(x_column, inplace=True)
         
         fig = go.Figure()
@@ -838,15 +855,95 @@ class ReportEngine:
                 line=dict(color=COLOR_PALETTE[0])
             ))
         
+        # Update title to indicate deduplication
+        title_suffix = ""
+        if id_col and snapshot_col:
+            title_suffix = " (deduplicated by most recent snapshot)"
+        
+        x_display = column_mapper.map_column_name(x_column)
+        y_display = column_mapper.map_column_name(y_column)
+        
         fig.update_layout(
-            title=f"{aggregation.title()} of {y_column} over time",
-            xaxis_title="Date",
-            yaxis_title=f"{aggregation.title()} of {y_column}",
+            title=f"{aggregation.title()} of {y_display} over time{title_suffix}",
+            xaxis_title=x_display,
+            yaxis_title=f"{aggregation.title()} of {y_display}",
             template=CHART_THEME,
             height=CHART_HEIGHT
         )
         
         return fig, None
+    
+    def _find_column(self, df: pd.DataFrame, target_column: str) -> Optional[str]:
+        """Find column by case-insensitive search."""
+        for col in df.columns:
+            if col.lower() == target_column.lower():
+                return col
+        return None
+    
+    def _deduplicate_for_time_series(self, df: pd.DataFrame, x_column: str, y_column: str, 
+                                   id_col: str, snapshot_col: str, time_period: str) -> pd.DataFrame:
+        """
+        Deduplicate opportunities for time series analysis by keeping only the most recent 
+        snapshot for each opportunity within each time period.
+        
+        Args:
+            df: Input dataframe
+            x_column: Time column for grouping (e.g., Created date)
+            y_column: Value column (e.g., SellPrice)
+            id_col: Opportunity ID column
+            snapshot_col: Snapshot date column
+            time_period: Time period for resampling ('D', 'W', 'M', etc.)
+            
+        Returns:
+            Deduplicated dataframe
+        """
+        df_clean = df.copy()
+        
+        # Ensure snapshot column is datetime
+        df_clean[snapshot_col] = pd.to_datetime(df_clean[snapshot_col])
+        
+        # Create time period grouping based on x_column
+        df_clean['time_group'] = pd.to_datetime(df_clean[x_column])
+        
+        # Map time_period to pandas frequency
+        freq_map = {
+            'D': 'D',     # Daily
+            'W': 'W',     # Weekly  
+            'M': 'M',     # Monthly - use M for periods
+            'Q': 'Q',     # Quarterly - use Q for periods
+            'Y': 'Y'      # Yearly - use Y for periods
+        }
+        
+        freq = freq_map.get(time_period, 'D')
+        
+        # Group by time period based on x_column (e.g., creation date)
+        df_clean['time_group'] = df_clean['time_group'].dt.to_period(freq).dt.start_time
+        
+        # For each time group and opportunity ID, keep only the most recent snapshot
+        deduplicated_rows = []
+        
+        for time_group, time_data in df_clean.groupby('time_group'):
+            for opp_id, opp_data in time_data.groupby(id_col):
+                if pd.isna(opp_id):
+                    continue
+                
+                # Sort by snapshot date and take the most recent
+                opp_data_sorted = opp_data.sort_values(snapshot_col)
+                most_recent = opp_data_sorted.iloc[-1:].copy()
+                
+                # Use the time_group for the x_column value to ensure proper time series grouping
+                most_recent[x_column] = time_group
+                
+                deduplicated_rows.append(most_recent)
+        
+        if deduplicated_rows:
+            result_df = pd.concat(deduplicated_rows, ignore_index=True)
+            # Remove the temporary time_group column
+            result_df = result_df.drop('time_group', axis=1)
+            return result_df
+        else:
+            # Return empty dataframe with same structure if no data
+            return df_clean.iloc[0:0].drop('time_group', axis=1)
     
     def _get_exclusion_note(self, exclusion_info: Dict[str, Any]) -> str:
         """

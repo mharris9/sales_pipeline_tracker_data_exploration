@@ -69,6 +69,102 @@ def create_auto_sized_dataframe_config(df: pd.DataFrame, min_width: int = 80, ma
     
     return column_config
 
+def _sanitize_dataframe_for_display(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Sanitize dataframe for Arrow compatibility by ensuring consistent data types.
+    
+    Args:
+        df: DataFrame to sanitize
+        
+    Returns:
+        Sanitized DataFrame with consistent data types
+    """
+    df_clean = df.copy()
+    
+    for column in df_clean.columns:
+        try:
+            # Convert mixed-type columns to string to avoid Arrow serialization errors
+            if df_clean[column].dtype == 'object':
+                # Check if column has mixed types
+                non_null_series = df_clean[column].dropna()
+                if len(non_null_series) > 0:
+                    # Get types of non-null values
+                    types = set(type(val).__name__ for val in non_null_series.iloc[:min(100, len(non_null_series))])
+                    
+                    # If we have mixed types, convert everything to string
+                    if len(types) > 1:
+                        df_clean[column] = df_clean[column].astype(str)
+                        # Replace 'nan' string with actual NaN for display
+                        df_clean[column] = df_clean[column].replace('nan', pd.NA)
+        except Exception as e:
+            # If any conversion fails, convert to string as fallback
+            try:
+                df_clean[column] = df_clean[column].astype(str)
+                df_clean[column] = df_clean[column].replace('nan', pd.NA)
+            except:
+                # If even string conversion fails, leave as is
+                pass
+    
+    return df_clean
+
+def _debug_column_sync():
+    """Debug function to check for column synchronization issues."""
+    if not st.session_state.data_loaded:
+        return
+    
+    # Get columns from different sources
+    df_columns = set(st.session_state.current_df.columns)
+    column_types_columns = set(st.session_state.data_handler.column_types.keys())
+    
+    # Find discrepancies
+    in_types_not_df = column_types_columns - df_columns
+    in_df_not_types = df_columns - column_types_columns
+    
+    if in_types_not_df or in_df_not_types:
+        st.warning("**Column Sync Issue Detected:**")
+        
+        if in_types_not_df:
+            st.write("**Columns in column_types but not in dataframe:**")
+            for col in sorted(in_types_not_df):
+                mapped_name = column_mapper.map_column_name(col)
+                st.write(f"- `{col}` → *{mapped_name}*")
+        
+        if in_df_not_types:
+            st.write("**Columns in dataframe but not in column_types:**")
+            for col in sorted(in_df_not_types):
+                st.write(f"- `{col}`")
+        
+        # Show fix button
+        if st.button("🔧 Fix Column Sync", help="Synchronize column_types with current dataframe"):
+            _fix_column_sync()
+            st.rerun()
+
+def _fix_column_sync():
+    """Fix column synchronization issues by updating column_types to match current dataframe."""
+    if not st.session_state.data_loaded:
+        return
+    
+    # Get current dataframe columns
+    current_columns = st.session_state.current_df.columns.tolist()
+    
+    # Create new column_types dict with only existing columns
+    new_column_types = {}
+    
+    for col in current_columns:
+        if col in st.session_state.data_handler.column_types:
+            # Keep existing type
+            new_column_types[col] = st.session_state.data_handler.column_types[col]
+        else:
+            # Detect type for new columns
+            from utils.data_types import detect_data_type
+            detected_type = detect_data_type(st.session_state.current_df[col], col)
+            new_column_types[col] = detected_type
+    
+    # Update the column_types
+    st.session_state.data_handler.column_types = new_column_types
+    
+    st.success("Column synchronization fixed!")
+
 # Initialize session state
 def initialize_session_state():
     """Initialize Streamlit session state variables."""
@@ -646,6 +742,9 @@ def render_data_preview():
     
     st.header("👀 Data Preview")
     
+    # Debug: Check for column sync issues
+    _debug_column_sync()
+    
     # Show sample of current data
     preview_rows = min(100, len(st.session_state.current_df))
     
@@ -658,14 +757,18 @@ def render_data_preview():
         show_all_columns = st.checkbox("Show all columns", value=False)
     
     # Display data
-    preview_df = st.session_state.current_df.head(preview_rows)
+    preview_df = st.session_state.current_df.head(preview_rows).copy()
     
+    # Apply column filtering based on checkbox state
     if not show_all_columns and len(st.session_state.current_df.columns) > 10:
         # Show first 10 columns
         display_columns = list(st.session_state.current_df.columns)[:10]
         preview_df = preview_df[display_columns]
     
-    # Configure column widths based on content
+    # Sanitize data types for Arrow compatibility
+    preview_df = _sanitize_dataframe_for_display(preview_df)
+    
+    # Configure column widths based on the final preview dataframe
     column_config = create_auto_sized_dataframe_config(preview_df, min_width=80, max_width=250)
     
     st.dataframe(
@@ -674,8 +777,11 @@ def render_data_preview():
         column_config=column_config
     )
     
+    # Show information about column visibility
     if not show_all_columns and len(st.session_state.current_df.columns) > 10:
         st.caption(f"Showing 10 of {len(st.session_state.current_df.columns)} columns. Check 'Show all columns' to see more.")
+    elif show_all_columns:
+        st.caption(f"Showing all {len(st.session_state.current_df.columns)} columns.")
 
 def main():
     """Main application function."""

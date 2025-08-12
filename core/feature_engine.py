@@ -65,7 +65,7 @@ class FeatureEngine:
         self.register_feature(
             name="user_win_rate",
             description="Win rate percentage for each user/owner",
-            requirements=[ID_COLUMN, "Stage"],
+            requirements=[ID_COLUMN, SNAPSHOT_DATE_COLUMN, "Stage", "Owner"],
             data_type=DataType.NUMERICAL,
             function=self._calculate_user_win_rate,
             group_by_column="Owner"  # This will be detected automatically
@@ -396,8 +396,17 @@ class FeatureEngine:
             return df
         
         try:
-            # Get final stage for each opportunity (this handles NaN internally)
-            df_temp = self._calculate_final_stage(df.copy())
+            # Check if final_stage already exists, if not calculate it
+            if 'final_stage' not in df.columns:
+                df_temp = self._calculate_final_stage(df.copy())
+            else:
+                df_temp = df.copy()
+            
+            # Check if final_stage column was successfully created
+            if 'final_stage' not in df_temp.columns:
+                st.warning("Could not calculate final stage - required for user win rate calculation")
+                df['user_win_rate'] = np.nan
+                return df
             
             # Remove rows with NaN in critical columns
             clean_final_stages = df_temp[[id_col, owner_col, 'final_stage']].dropna()
@@ -415,16 +424,24 @@ class FeatureEngine:
                     continue
                 
                 owner_opps = final_stages[final_stages[owner_col] == owner]
-                total_closed = len(owner_opps[owner_opps['final_stage'].isin(['Closed - WON', 'Closed - LOST'])])
-                won_count = len(owner_opps[owner_opps['final_stage'] == 'Closed - WON'])
+                
+                # Handle different stage naming conventions
+                won_stages = ['Closed - WON', 'Won', 'Closed Won', 'WON']
+                lost_stages = ['Closed - LOST', 'Lost', 'Closed Lost', 'LOST']
+                closed_stages = won_stages + lost_stages
+                
+                total_closed = len(owner_opps[owner_opps['final_stage'].isin(closed_stages)])
+                won_count = len(owner_opps[owner_opps['final_stage'].isin(won_stages)])
                 
                 win_rate = (won_count / total_closed * 100) if total_closed > 0 else 0
                 win_rates.append({owner_col: owner, 'user_win_rate': win_rate})
             
-            # Merge back to original DataFrame
+            # Merge back to working DataFrame
             if win_rates:
                 win_rate_df = pd.DataFrame(win_rates)
-                df = df.merge(win_rate_df, on=owner_col, how='left')
+                df_temp = df_temp.merge(win_rate_df, on=owner_col, how='left')
+                # Copy the user_win_rate column back to original DataFrame
+                df['user_win_rate'] = df_temp['user_win_rate']
             else:
                 df['user_win_rate'] = np.nan
                 
