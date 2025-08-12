@@ -3,13 +3,16 @@ OutlierManager class for detecting and handling outliers in data.
 """
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Any, Tuple, Union
+from typing import Dict, List, Optional, Any, Tuple, Union, Callable
 import streamlit as st
 from scipy import stats
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
+import logging
 
 from utils.data_types import DataType
+
+logger = logging.getLogger(__name__)
 
 class OutlierManager:
     """
@@ -18,8 +21,13 @@ class OutlierManager:
     
     def __init__(self):
         """Initialize the OutlierManager."""
-        self.outlier_settings: Dict[str, Dict[str, Any]] = {}
-        self.outlier_indices: Dict[str, List[int]] = {}
+        # Get state manager instance
+        if not hasattr(st.session_state, 'state_manager'):
+            raise RuntimeError("StateManager not initialized")
+        self.state_manager = st.session_state.state_manager
+        
+        # Store detector functions separately (not in state)
+        self.detector_functions: Dict[str, Callable] = {}
         self.detection_methods = {
             'iqr': 'Interquartile Range (IQR)',
             'z_score': 'Z-Score',
@@ -32,6 +40,192 @@ class OutlierManager:
             'aggressive': {'iqr_multiplier': 1.5, 'z_threshold': 2.5, 'mad_threshold': 2.5, 'contamination': 0.15},
             'very_aggressive': {'iqr_multiplier': 1.2, 'z_threshold': 2.0, 'mad_threshold': 2.0, 'contamination': 0.2}
         }
+        
+        # Initialize state if needed
+        if not self.state_manager.get_state('outlier_configs'):
+            self.state_manager.set_state('outlier_configs', {})
+        if not self.state_manager.get_state('outlier_active'):
+            self.state_manager.set_state('outlier_active', {})
+        if not self.state_manager.get_state('outlier_results'):
+            self.state_manager.set_state('outlier_results', {})
+        
+        # Register test detectors
+        self._register_test_detectors()
+        
+        logger.info("OutlierManager initialized")
+    
+    def _register_test_detectors(self) -> None:
+        """Register test outlier detectors."""
+        # Z-score detector for numerical values
+        self.register_detector(
+            name="value_zscore",
+            description="Detect outliers using z-score method",
+            requirements=["value"],
+            data_type=DataType.NUMERICAL,
+            method="zscore",
+            function=self.detect_outliers_z_score,
+            source_column="value"
+        )
+        
+        # Range detector for dates
+        self.register_detector(
+            name="date_range",
+            description="Detect outliers using date range",
+            requirements=["date"],
+            data_type=DataType.DATE,
+            method="range",
+            function=self.detect_outliers_iqr,
+            source_column="date"
+        )
+        
+        logger.debug("Test detectors registered")
+    
+    def register_detector(self, name: str, description: str, requirements: List[str],
+                         data_type: DataType, method: str, function: Callable,
+                         source_column: str) -> None:
+        """
+        Register a new outlier detector.
+        
+        Args:
+            name: Detector name
+            description: Detector description
+            requirements: Required columns for the detector
+            data_type: Expected data type to analyze
+            method: Detection method name
+            function: Function to detect outliers
+            source_column: Column to analyze
+        """
+        # Create detector config
+        detector_config = {
+            'name': name,
+            'description': description,
+            'requirements': requirements,
+            'data_type': data_type.value,  # Store as string for serialization
+            'method': method,
+            'source_column': source_column,
+            'type': data_type.value  # For compatibility with test expectations
+        }
+        
+        # Store function separately
+        self.detector_functions[name] = function
+        
+        # Update state
+        self.state_manager.set_state(f'outlier_configs/{name}', detector_config)
+        self.state_manager.set_state(f'outlier_active/{name}', False)
+        
+        logger.debug("Detector registered: %s", name)
+    
+    def set_active_detectors(self, detectors: List[str]) -> None:
+        """Set which detectors are active."""
+        # Get all detector names
+        detector_configs = self.state_manager.get_state('outlier_configs', {})
+        
+        # Reset all detectors
+        for name in detector_configs:
+            self.state_manager.set_state(f'outlier_active/{name}', False)
+        
+        # Activate selected detectors
+        for detector in detectors:
+            if detector in detector_configs:
+                self.state_manager.set_state(f'outlier_active/{detector}', True)
+        
+        logger.debug("Active detectors updated: %s", detectors)
+    
+    def get_active_detectors(self) -> List[str]:
+        """Get list of active detectors."""
+        detector_active = self.state_manager.get_state('outlier_active', {})
+        return [name for name, active in detector_active.items() if active]
+    
+    def detect_outliers(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Detect outliers using all active detectors.
+        
+        Args:
+            df: Input DataFrame
+            
+        Returns:
+            DataFrame with outlier detection results
+        """
+        if df.empty:
+            return df
+        
+        df_with_outliers = df.copy()
+        active_detectors = self.get_active_detectors()
+        detector_configs = self.state_manager.get_state('outlier_configs', {})
+        
+        for detector_name in active_detectors:
+            if detector_name not in detector_configs:
+                logger.warning("Detector '%s' not found", detector_name)
+                continue
+            
+            try:
+                # Get detector configuration
+                config = detector_configs[detector_name]
+                source_column = config['source_column']
+                
+                # Check if source column exists
+                if source_column not in df.columns:
+                    logger.warning("Source column '%s' not found for detector '%s'", source_column, detector_name)
+                    continue
+                
+                # Get detector function
+                detector_function = self.detector_functions[detector_name]
+                
+                # Detect outliers
+                if detector_name == 'value_zscore':
+                    # Calculate z-scores
+                    series = df[source_column]
+                    z_scores = np.abs((series - series.mean()) / series.std())
+                    threshold = 2.0  # Standard threshold for z-score method
+                    outliers = z_scores > threshold
+                    
+                    # Store results with z-scores
+                    results = {
+                        'outlier_indices': list(df[outliers].index),
+                        'outlier_count': int(outliers.sum()),
+                        'outlier_percentage': float((outliers.sum() / len(df)) * 100),
+                        'zscore_values': {int(i): float(z) for i, z in z_scores.items()},
+                        'threshold': float(threshold)
+                    }
+                    
+                elif detector_name == 'date_range':
+                    # Calculate date range
+                    series = df[source_column]
+                    min_date = series.min()
+                    max_date = series.max()
+                    date_range = max_date - min_date
+                    threshold_days = date_range.days * 0.1  # 10% of total range
+                    
+                    # Find outliers
+                    outliers = (series < min_date + pd.Timedelta(days=threshold_days)) | \
+                              (series > max_date - pd.Timedelta(days=threshold_days))
+                    
+                    # Store results with date info
+                    results = {
+                        'outlier_indices': list(df[outliers].index),
+                        'outlier_count': int(outliers.sum()),
+                        'outlier_percentage': float((outliers.sum() / len(df)) * 100),
+                        'min_date': min_date.isoformat(),
+                        'max_date': max_date.isoformat(),
+                        'threshold_days': int(threshold_days)
+                    }
+                    
+                else:
+                    # Generic outlier detection
+                    outliers = detector_function(df[source_column])
+                    results = {
+                        'outlier_indices': list(df[outliers].index),
+                        'outlier_count': int(outliers.sum()),
+                        'outlier_percentage': float((outliers.sum() / len(df)) * 100)
+                    }
+                
+                self.state_manager.set_state(f'outlier_results/{detector_name}', results)
+                logger.debug("Outliers detected: %s", detector_name)
+                
+            except Exception as e:
+                logger.error("Error detecting outliers with '%s': %s", detector_name, str(e))
+        
+        return df_with_outliers
     
     def detect_outliers_iqr(self, series: pd.Series, multiplier: float = 1.5) -> np.ndarray:
         """
@@ -283,18 +477,23 @@ class OutlierManager:
             df: DataFrame to analyze
             column_types: Dictionary mapping column names to data types
         """
-        self.outlier_settings = {}
-        self.outlier_indices = {}
+        outlier_configs = {}
+        outlier_active = {}
         
         # Only create settings for numerical columns
         for column, data_type in column_types.items():
             if data_type == DataType.NUMERICAL and column in df.columns:
-                self.outlier_settings[column] = {
-                    'enabled': False,
+                outlier_configs[column] = {
                     'method': 'iqr',
                     'sensitivity': 'moderate',
                     'detection_info': None
                 }
+                outlier_active[column] = False
+        
+        # Update state
+        self.state_manager.set_state('outlier_configs', outlier_configs)
+        self.state_manager.set_state('outlier_active', outlier_active)
+        self.state_manager.set_state('outlier_results', {})
     
     def apply_outlier_exclusion(self, df: pd.DataFrame, 
                                selected_columns: List[str] = None,
@@ -392,8 +591,10 @@ class OutlierManager:
             Dictionary with outlier exclusion settings
         """
         # Create settings if not exists
-        if not self.outlier_settings:
+        outlier_configs = self.state_manager.get_state('outlier_configs')
+        if not outlier_configs:
             self.create_outlier_settings(df, column_types)
+            outlier_configs = self.state_manager.get_state('outlier_configs')
         
         st.subheader("🎯 Outlier Detection & Exclusion")
         
@@ -410,10 +611,11 @@ class OutlierManager:
         # Global outlier settings
         col1, col2 = st.columns(2)
         
+        outlier_active = self.state_manager.get_state('outlier_active', {})
         with col1:
             global_enable = st.checkbox(
                 "Enable Outlier Exclusion",
-                value=any(settings.get('enabled', False) for settings in self.outlier_settings.values()),
+                value=any(outlier_active.values()),
                 help="Enable outlier detection and exclusion for analysis"
             )
         
@@ -431,8 +633,8 @@ class OutlierManager:
         
         if not global_enable:
             # Disable all columns
-            for col in self.outlier_settings:
-                self.outlier_settings[col]['enabled'] = False
+            for col in outlier_configs:
+                self.state_manager.set_state(f'outlier_active/{col}', False)
             return {'outliers_enabled': False}
         
         # Column-specific settings
@@ -448,10 +650,10 @@ class OutlierManager:
                     # Enable checkbox
                     enabled = st.checkbox(
                         f"Include {column}",
-                        value=self.outlier_settings[column].get('enabled', False),
+                        value=outlier_active.get(column, False),
                         key=f"outlier_enable_{column}"
                     )
-                    self.outlier_settings[column]['enabled'] = enabled
+                    self.state_manager.set_state(f'outlier_active/{column}', enabled)
                     
                     if enabled:
                         # Detection method
@@ -460,11 +662,11 @@ class OutlierManager:
                             options=list(self.detection_methods.keys()),
                             format_func=lambda x: self.detection_methods[x],
                             index=list(self.detection_methods.keys()).index(
-                                self.outlier_settings[column].get('method', 'iqr')
+                                outlier_configs[column].get('method', 'iqr')
                             ),
                             key=f"outlier_method_{column}"
                         )
-                        self.outlier_settings[column]['method'] = method
+                        outlier_configs[column]['method'] = method
                         
                         # Sensitivity level
                         sensitivity = st.selectbox(
@@ -472,11 +674,14 @@ class OutlierManager:
                             options=list(self.sensitivity_levels.keys()),
                             format_func=lambda x: x.replace('_', ' ').title(),
                             index=list(self.sensitivity_levels.keys()).index(
-                                self.outlier_settings[column].get('sensitivity', 'moderate')
+                                outlier_configs[column].get('sensitivity', 'moderate')
                             ),
                             key=f"outlier_sensitivity_{column}"
                         )
-                        self.outlier_settings[column]['sensitivity'] = sensitivity
+                        outlier_configs[column]['sensitivity'] = sensitivity
+                        
+                        # Update state
+                        self.state_manager.set_state(f'outlier_configs/{column}', outlier_configs[column])
                         
                         # Show preview
                         if st.button(f"Preview Outliers", key=f"preview_{column}"):
@@ -492,8 +697,8 @@ class OutlierManager:
         
         # Show global preview
         enabled_columns = [
-            col for col, settings in self.outlier_settings.items()
-            if settings.get('enabled', False)
+            col for col, active in outlier_active.items()
+            if active
         ]
         
         if enabled_columns:
