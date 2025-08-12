@@ -4,7 +4,7 @@ Outliers Page - Detect and manage outliers
 import streamlit as st
 import time
 
-def render_outliers_page():
+def render_outliers_section():
     st.title("Outlier Detection")
     
     if not hasattr(st.session_state, 'state_manager'):
@@ -48,4 +48,4 @@ def render_outliers_page():
         outlier_manager.display_results()
 
 if __name__ == "__main__":
-    render_outliers_page()
+    render_outliers_section()

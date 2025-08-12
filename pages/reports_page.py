@@ -4,7 +4,7 @@ Reports Page - Generate and display data reports
 import streamlit as st
 import time
 
-def render_reports_page():
+def render_reports_section():
     st.title("Data Reports")
     
     if not hasattr(st.session_state, 'state_manager'):
@@ -48,4 +48,4 @@ def render_reports_page():
         report_engine.display_reports()
 
 if __name__ == "__main__":
-    render_reports_page()
+    render_reports_section()

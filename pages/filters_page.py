@@ -4,7 +4,7 @@ Filters Page - Manage and apply data filters
 import streamlit as st
 import time
 
-def render_filters_page():
+def render_filters_section():
     st.title("Data Filters")
     
     if not hasattr(st.session_state, 'state_manager'):
@@ -75,4 +75,4 @@ def render_filters_page():
                 st.toast(f"❌ Error clearing filters: {str(e)}", icon="❌")
 
 if __name__ == "__main__":
-    render_filters_page()
+    render_filters_section()

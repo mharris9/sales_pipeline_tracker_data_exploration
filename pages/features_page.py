@@ -4,7 +4,7 @@ Features Page - Create and manage derived features
 import streamlit as st
 import time
 
-def render_features_page():
+def render_features_section():
     st.title("Feature Engineering")
     
     if not hasattr(st.session_state, 'state_manager'):
@@ -104,4 +104,4 @@ def render_features_page():
                 st.info(f"No results available for {feature_name}")
 
 if __name__ == "__main__":
-    render_features_page()
+    render_features_section()
