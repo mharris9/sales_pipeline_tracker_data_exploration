@@ -115,7 +115,7 @@ def test_data_handler():
     """Test the DataHandler class."""
     print("Testing DataHandler...")
     
-    from core.data_handler import DataHandler
+    from src.services.data_handler import DataHandler
     
     # Create sample data
     df = create_sample_data(500, 50)
@@ -140,7 +140,7 @@ def test_feature_engine():
     """Test the FeatureEngine class."""
     print("\nTesting FeatureEngine...")
     
-    from core.feature_engine import FeatureEngine
+    from src.services.feature_engine import FeatureEngine
     
     # Create sample data
     df = create_sample_data(500, 50)
@@ -162,8 +162,8 @@ def test_filter_manager():
     """Test the FilterManager class."""
     print("\nTesting FilterManager...")
     
-    from core.filter_manager import FilterManager
-    from utils.data_types import detect_data_type
+    from src.services.filter_manager import FilterManager
+    from src.utils.data_types import detect_data_type
     
     # Create sample data
     df = create_sample_data(500, 50)
@@ -194,7 +194,7 @@ def test_report_engine():
     """Test the ReportEngine class."""
     print("\nTesting ReportEngine...")
     
-    from core.report_engine import ReportEngine
+    from src.services.report_engine import ReportEngine
     
     # Create sample data
     df = create_sample_data(500, 50)
@@ -216,8 +216,8 @@ def test_outlier_manager():
     """Test the OutlierManager class."""
     print("\nTesting OutlierManager...")
     
-    from core.outlier_manager import OutlierManager
-    from utils.data_types import detect_data_type, DataType
+    from src.services.outlier_manager import OutlierManager
+    from src.utils.data_types import detect_data_type, DataType
     
     # Create sample data with some outliers
     df = create_sample_data(500, 50)

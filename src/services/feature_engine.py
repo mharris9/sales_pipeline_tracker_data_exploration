@@ -16,12 +16,17 @@ class FeatureEngine:
     Creates and manages derived features using centralized state management.
     """
     
-    def __init__(self):
+    def __init__(self, state_manager=None):
         """Initialize the FeatureEngine."""
         # Get state manager instance
-        if not hasattr(st.session_state, 'state_manager'):
-            raise RuntimeError("StateManager not initialized")
-        self.state_manager = st.session_state.state_manager
+        if state_manager is not None:
+            self.state_manager = state_manager
+        elif hasattr(st.session_state, 'state_manager'):
+            self.state_manager = st.session_state.state_manager
+        else:
+            # Create a temporary state manager for testing
+            from src.services.state_manager import StateManager
+            self.state_manager = StateManager()
         
         # Store feature functions separately (not in state)
         self.feature_functions: Dict[str, Callable] = {}
@@ -234,3 +239,52 @@ class FeatureEngine:
         trends = self._calculate_date_trends_cached(df)
         self.state_manager.set_state(f'feature_results/date_trends', trends)
         return df
+
+    def _calculate_days_in_pipeline(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Calculate the number of days each opportunity has been in the pipeline.
+        
+        Args:
+            df: DataFrame with Snapshot Date column
+            
+        Returns:
+            DataFrame with 'Days in Pipeline' column added
+        """
+        from config.settings import SNAPSHOT_DATE_COLUMN
+        
+        if df.empty:
+            return df
+        
+        df_copy = df.copy()
+        
+        # Check if Snapshot Date column exists
+        if SNAPSHOT_DATE_COLUMN not in df_copy.columns:
+            logger.warning(f"Snapshot Date column '{SNAPSHOT_DATE_COLUMN}' not found")
+            return df_copy
+        
+        # Ensure Snapshot Date is datetime
+        if not pd.api.types.is_datetime64_any_dtype(df_copy[SNAPSHOT_DATE_COLUMN]):
+            df_copy[SNAPSHOT_DATE_COLUMN] = pd.to_datetime(df_copy[SNAPSHOT_DATE_COLUMN], errors='coerce')
+        
+        # Remove rows with invalid dates
+        df_copy = df_copy.dropna(subset=[SNAPSHOT_DATE_COLUMN])
+        
+        if df_copy.empty:
+            logger.warning("No valid dates found after conversion")
+            return df_copy
+        
+        # Calculate days from earliest date in the dataset
+        earliest_date = df_copy[SNAPSHOT_DATE_COLUMN].min()
+        df_copy['Days in Pipeline'] = (df_copy[SNAPSHOT_DATE_COLUMN] - earliest_date).dt.days
+        
+        # Store the calculation in state
+        calculation_info = {
+            'earliest_date': earliest_date.isoformat(),
+            'latest_date': df_copy[SNAPSHOT_DATE_COLUMN].max().isoformat(),
+            'total_days_range': int((df_copy[SNAPSHOT_DATE_COLUMN].max() - earliest_date).days),
+            'records_with_days': int(len(df_copy))
+        }
+        self.state_manager.set_state('feature_results/days_in_pipeline', calculation_info)
+        
+        logger.info(f"Calculated days in pipeline for {len(df_copy)} records")
+        return df_copy

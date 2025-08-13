@@ -5,9 +5,9 @@ import pytest
 import pandas as pd
 import streamlit as st
 from streamlit.testing.v1 import AppTest
-from core.filter_manager import FilterManager
-from utils.data_types import DataType
-from test_data_generator import generate_test_data
+from src.services.filter_manager import FilterManager
+from src.utils.data_types import DataType
+from ..utils.test_data_generator import generate_test_data
 
 def test_filter_ui():
     """Test filter UI functionality."""

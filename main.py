@@ -47,6 +47,42 @@ except ImportError as e:
     print(f"Warning: Some pages not available: {e}")
     PAGES_AVAILABLE = False
 
+def initialize_session_state():
+    """Initialize Streamlit session state variables."""
+    # Keep only simple values in session_state to avoid pickle issues
+    if 'data_handler' not in st.session_state:
+        st.session_state.data_handler = None
+    if 'filter_manager' not in st.session_state:
+        st.session_state.filter_manager = None
+    if 'feature_engine' not in st.session_state:
+        st.session_state.feature_engine = None
+    if 'report_engine' not in st.session_state:
+        st.session_state.report_engine = None
+    if 'export_manager' not in st.session_state:
+        st.session_state.export_manager = None
+    if 'outlier_manager' not in st.session_state:
+        st.session_state.outlier_manager = None
+
+    # Initialize data state
+    if 'current_df' not in st.session_state:
+        st.session_state.current_df = None
+    if 'data_loaded' not in st.session_state:
+        st.session_state.data_loaded = False
+    if 'data_info' not in st.session_state:
+        st.session_state.data_info = {}
+    if 'column_types' not in st.session_state:
+        st.session_state.column_types = {}
+    if 'column_info' not in st.session_state:
+        st.session_state.column_info = {}
+
+    # Filter state
+    if 'filtered_df' not in st.session_state:
+        st.session_state.filtered_df = None
+
+    # Form state for better drag and drop handling
+    if 'file_upload_key' not in st.session_state:
+        st.session_state.file_upload_key = 0
+
 def load_custom_css():
     """Load custom CSS for styling"""
     try:
@@ -68,111 +104,66 @@ def load_custom_css():
             border-radius: 0.5rem;
             border: 1px solid #e0e0e0;
         }
+        /* Sticky marker makes the NEXT container sticky */
+        .sticky-controls + div {
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            background: white;
+            padding: 0.5rem 0 0.5rem 0;
+            border-bottom: 1px solid #eee;
+        }
+        /* Sticky header for metrics */
+        .sticky-header {
+            position: sticky;
+            top: 0;
+            z-index: 1500;
+            background: white;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 0.5rem;
+        }
+        /* Compact filters container */
+        .filters-compact {
+            max-height: 320px;
+            overflow-y: auto;
+            padding-right: 8px;
+        }
+        .filters-compact [data-testid="stVerticalBlock"] > div {
+            margin-bottom: 0.25rem;
+        }
+        .filters-compact [data-testid="stMultiSelect"],
+        .filters-compact [data-testid="stDateInput"],
+        .filters-compact [data-testid="stNumberInput"],
+        .filters-compact [data-testid="stCheckbox"] {
+            margin-bottom: 0.25rem;
+        }
+        .filters-compact label, .filters-compact p {
+            margin-bottom: 0.1rem;
+        }
         </style>
         """, unsafe_allow_html=True)
 
-def initialize_session_state():
-    """Initialize Streamlit session state variables."""
-    if 'state_manager' not in st.session_state:
-        state_manager = StateManager()
-
-        state_manager.register_extension('data', {
-            'data_handler': DataHandler(),
-            'current_df': None,
-            'data_loaded': False,
-            'data_info': {}
-        })
-
-        state_manager.register_extension('filters', {
-            'filter_manager': FilterManager(),
-            'active_filters': {},
-            'filter_configs': {},
-            'filter_results': {}
-        })
-
-        state_manager.register_extension('features', {
-            'feature_engine': FeatureEngine(),
-            'computed_features': {},
-            'feature_configs': {}
-        })
-
-        state_manager.register_extension('reports', {
-            'report_engine': ReportEngine(),
-            'current_report': None,
-            'report_configs': {},
-            'report_results': {}
-        })
-
-        state_manager.register_extension('exports', {
-            'export_manager': ExportManager(),
-            'export_history': []
-        })
-
-        state_manager.register_extension('outliers', {
-            'outlier_manager': OutlierManager(),
-            'settings': {'outliers_enabled': False},
-            'exclusion_info': {'outliers_excluded': False}
-        })
-
-        state_manager.register_validator('data.current_df', lambda df: isinstance(df, (pd.DataFrame, type(None))))
-        state_manager.register_validator('data.data_loaded', lambda x: isinstance(x, bool))
-        state_manager.register_validator('outliers.settings', lambda x: isinstance(x, dict) and 'outliers_enabled' in x)
-
-        state_manager.register_watcher('data.current_df', lambda old, new: logger.info(f"DataFrame updated: {len(new)} rows"))
-        state_manager.register_watcher('filters.active_filters', lambda old, new: logger.info(f"Active filters changed: {new}"))
-
-        st.session_state.state_manager = state_manager
-
-    # For backward compatibility during transition (these will be removed later)
-    state_manager = st.session_state.state_manager
-    if 'data_handler' not in st.session_state:
-        st.session_state.data_handler = state_manager.get_extension('data_handler')
-    if 'filter_manager' not in st.session_state:
-        st.session_state.filter_manager = state_manager.get_extension('filters.filter_manager')
-    if 'feature_engine' not in st.session_state:
-        st.session_state.feature_engine = state_manager.get_extension('features.feature_engine')
-    if 'report_engine' not in st.session_state:
-        st.session_state.report_engine = state_manager.get_extension('reports.report_engine')
-    if 'export_manager' not in st.session_state:
-        st.session_state.export_manager = state_manager.get_extension('exports.export_manager')
-    if 'outlier_manager' not in st.session_state:
-        st.session_state.outlier_manager = state_manager.get_extension('outliers.outlier_manager')
-    if 'current_df' not in st.session_state:
-        st.session_state.current_df = state_manager.get_state('data.current_df')
-    if 'data_loaded' not in st.session_state:
-        st.session_state.data_loaded = state_manager.get_state('data.data_loaded')
-    if 'outlier_settings' not in st.session_state:
-        st.session_state.outlier_settings = state_manager.get_state('outliers.settings')
-    if 'exclusion_info' not in st.session_state:
-        st.session_state.exclusion_info = state_manager.get_state('outliers.exclusion_info')
-
 def render_header():
     """Render the application header with metrics"""
-    st.title("Sales Pipeline Data Explorer")
+    st.title("Data Explorer")
     
-    # Get metrics from state
-    data_loaded = st.session_state.state_manager.get_state('data.data_loaded', False)
-    
-    if data_loaded:
-        data_handler = st.session_state.state_manager.get_extension('data_handler')
-        df = data_handler.get_current_df()
+    if st.session_state.data_loaded and st.session_state.current_df is not None:
+        df = st.session_state.current_df
+        total_records = len(df)
+        filtered_records = len(st.session_state.filtered_df) if st.session_state.filtered_df is not None else total_records
         
-        if df is not None:
-            total_records = len(df)
-            filtered_records = st.session_state.state_manager.get_state('filters.filtered_count', total_records)
-            
-            # Display metrics
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Total Records", total_records)
-            with col2:
-                delta = filtered_records - total_records if total_records > 0 else 0
-                st.metric("Filtered Records", filtered_records, delta=delta)
-            with col3:
-                memory_usage = f"{df.memory_usage(deep=True).sum() / 1024**2:.1f} MB"
-                st.metric("Memory Usage", memory_usage)
-        else:
-            st.info("Data loaded but not available for display.")
+        # Always-visible selection summary panel (sticky)
+        st.markdown('<div class="sticky-header">', unsafe_allow_html=True)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Records", total_records)
+        with col2:
+            st.metric("Selected Records", filtered_records)
+        with col3:
+            memory_usage = f"{df.memory_usage(deep=True).sum() / 1024**2:.1f} MB"
+            st.metric("Memory Usage", memory_usage)
+        st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("Upload data to see metrics and begin analysis.")
 
@@ -180,24 +171,49 @@ def render_data_upload():
     """Render the data upload section with form validation"""
     st.header("Data Upload")
 
+    # Add debugging information for drag and drop issues
+    if st.checkbox("Debug Mode", key="debug_mode"):
+        st.write("**Debug Info:**")
+        st.write(f"File upload key: {st.session_state.file_upload_key}")
+        st.write(f"Session state keys: {list(st.session_state.keys())}")
+
     with st.form("data_upload_form"):
+        # Use a dynamic key to force re-render on drag and drop
+        upload_key = f"file_uploader_{st.session_state.file_upload_key}"
+        
         uploaded_file = st.file_uploader(
             "Choose a CSV file",
             type=["csv", "xlsx", "xls"],
-            key="file_uploader",
-            help="Upload your sales pipeline data file (CSV or Excel)"
+            key=upload_key,
+            help="Upload your sales pipeline data file (CSV or Excel). You can drag and drop files here."
         )
 
         form_valid = True
         validation_errors = []
 
-        if uploaded_file:
-            file_size_mb = uploaded_file.size / (1024 * 1024)
-            if file_size_mb > MAX_FILE_SIZE_MB: # Using MAX_FILE_SIZE_MB from settings
+        # Retrieve current uploaded file from session state to ensure availability within form submit
+        current_file = st.session_state.get(upload_key)
+
+        # Add file information display for debugging
+        if current_file is not None:
+            st.write(f"**File detected:** {current_file.name}")
+            # UploadedFile has no .size attribute directly in some versions; compute from bytes
+            try:
+                current_bytes = current_file.getvalue()
+                current_size = len(current_bytes)
+            except Exception:
+                # Fallback to attribute if available
+                current_size = getattr(current_file, "size", 0)
+                current_bytes = None
+            st.write(f"**File size:** {current_size} bytes")
+            st.write(f"**File type:** {current_file.type if hasattr(current_file, 'type') else 'unknown'}")
+            
+            file_size_mb = current_size / (1024 * 1024) if current_size else 0
+            if file_size_mb > MAX_FILE_SIZE_MB:
                 validation_errors.append(f"File size ({file_size_mb:.1f} MB) exceeds {MAX_FILE_SIZE_MB} MB limit")
                 form_valid = False
 
-            file_extension = uploaded_file.name.lower().split('.')[-1]
+            file_extension = current_file.name.lower().split('.')[-1]
             if file_extension not in ['csv', 'xlsx', 'xls']:
                 validation_errors.append(f"Unsupported file type: {file_extension}")
                 form_valid = False
@@ -206,20 +222,52 @@ def render_data_upload():
             for error in validation_errors:
                 st.error(error)
 
-        submit_button = st.form_submit_button(
-            "Load Data",
-            disabled=not uploaded_file or not form_valid,
-            help="Click to load the uploaded file"
-        )
+        # Add a button to reset the form if needed
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            submit_button = st.form_submit_button(
+                "Load Data",
+                disabled=False,
+                help="Click to load the uploaded file"
+            )
+        with col2:
+            if st.form_submit_button("Reset Form", help="Reset the upload form"):
+                st.session_state.file_upload_key += 1
+                st.rerun()
 
-        if submit_button and uploaded_file and form_valid:
-            data_handler = st.session_state.state_manager.get_extension('data_handler')
+        if submit_button:
+            # Re-fetch after submit; forms commit widget values on submit
+            current_file = st.session_state.get(upload_key)
+            if current_file is None:
+                st.error("No file found. Please select a file and try again.")
+                return
+            if not form_valid:
+                st.error("Fix validation errors above and try again.")
+                return
             with st.spinner("Loading data..."):
-                if data_handler.load_file(uploaded_file):
-                    time.sleep(0.1)
-                    st.session_state.state_manager.trigger_rerun()
-                else:
-                    st.error("Failed to load data. Please check the file format.")
+                try:
+                    # Use a local DataHandler for processing (avoid storing objects in session_state)
+                    from src.services.data_handler import DataHandler
+                    handler = DataHandler()
+                    success = handler.load_file(current_file)
+                    
+                    if success:
+                        # Update session state with loaded data
+                        st.session_state.current_df = handler.get_current_df()
+                        st.session_state.data_loaded = handler.is_data_loaded()
+                        st.session_state.data_info = handler.get_file_info()
+                        # Convert enum dict to plain strings for session_state
+                        ct = handler.get_column_types()
+                        st.session_state.column_types = {k: v.value if hasattr(v, 'value') else str(v) for k, v in ct.items()}
+                        st.session_state.column_info = handler.get_column_info()
+                        st.session_state.filtered_df = st.session_state.current_df.copy()
+                        
+                        st.success(f"✅ Successfully loaded {len(st.session_state.current_df)} rows and {len(st.session_state.current_df.columns)} columns")
+                    else:
+                        st.error("Failed to load data. Please check the file format and required columns.")
+                except Exception as e:
+                    st.error(f"Error loading file: {str(e)}")
+                    logger.error(f"File loading error: {str(e)}")
 
 def main():
     """Main application function."""
@@ -230,24 +278,22 @@ def main():
     with st.sidebar:
         render_data_upload()
         # Data info (if loaded)
-        if st.session_state.state_manager.get_state('data.data_loaded', False):
+        if st.session_state.data_loaded:
             st.markdown("---")
             st.header("📊 Data Info")
-            data_handler = st.session_state.state_manager.get_extension('data_handler')
-            file_info = data_handler.get_file_info()
-            st.write(f"**File:** {file_info.get('name', 'N/A')}")
-            st.write(f"**Size:** {file_info.get('size', 0) / 1024**2:.1f} MB")
+            st.write(f"**File:** {st.session_state.data_info.get('name', 'N/A')}")
+            st.write(f"**Size:** {st.session_state.data_info.get('size', 0) / 1024**2:.1f} MB")
 
-            column_types = data_handler.get_column_types()
             type_counts = {}
-            for dtype in column_types.values():
-                type_counts[dtype.value] = type_counts.get(dtype.value, 0) + 1
+            for dtype in st.session_state.column_types.values():
+                dtype_key = dtype if isinstance(dtype, str) else getattr(dtype, 'value', str(dtype))
+                type_counts[dtype_key] = type_counts.get(dtype_key, 0) + 1
 
             st.write("**Column Types:**")
             for dtype, count in type_counts.items():
                 st.write(f"- {dtype.title()}: {count}")
 
-    if st.session_state.state_manager.get_state('data.data_loaded', False):
+    if st.session_state.data_loaded:
         tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "🔍 Filters",
             "🎯 Outliers",
@@ -294,9 +340,9 @@ def main():
                 st.error("Data preview page not available")
     else:
         st.markdown("""
-        ## Welcome to the Sales Pipeline Data Explorer! 🚀
+        ## Welcome to the Data Explorer! 🚀
 
-        This application helps you analyze and explore your sales pipeline data with powerful filtering,
+        This application helps you analyze and explore any dataset with powerful filtering,
         feature engineering, and visualization capabilities.
 
         ### Getting Started:
@@ -310,11 +356,17 @@ def main():
         - CSV files (.csv)
         - Excel files (.xlsx, .xls)
 
-        ### Expected Data Structure:
-        - **Id**: Unique identifier for each opportunity (can have duplicates for different snapshots)
-        - **Snapshot Date**: Date when the snapshot was taken (MM/DD/YYYY format)
-        - **Stage**: Current stage of the opportunity
-        - Additional columns with categorical, numerical, date, or text data
+        ### How It Works:
+        The application automatically:
+        - **Detects column types** (text, numbers, dates, categories)
+        - **Identifies data patterns** (ID columns, date columns, etc.)
+        - **Creates appropriate filters** based on data types
+        - **Generates relevant visualizations** for your data
+
+        ### Tips for Best Results:
+        - Include a mix of different data types (text, numbers, dates)
+        - Use descriptive column names
+        - Clean your data before uploading for better analysis
 
         Upload your file to get started! 📊
         """)

@@ -6,8 +6,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-from core.feature_engine import FeatureEngine
-from utils.data_types import DataType
+from src.services.feature_engine import FeatureEngine
+from src.utils.data_types import DataType
 
 
 class TestFeatureEngine:

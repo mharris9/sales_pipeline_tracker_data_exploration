@@ -14,12 +14,17 @@ class FilterManager:
     Manages filtering of data based on column types and user selections.
     """
     
-    def __init__(self):
+    def __init__(self, state_manager=None):
         """Initialize the FilterManager."""
         # Get state manager instance
-        if not hasattr(st.session_state, 'state_manager'):
-            raise RuntimeError("StateManager not initialized")
-        self.state_manager = st.session_state.state_manager
+        if state_manager is not None:
+            self.state_manager = state_manager
+        elif hasattr(st.session_state, 'state_manager'):
+            self.state_manager = st.session_state.state_manager
+        else:
+            # Create a temporary state manager for testing
+            from src.services.state_manager import StateManager
+            self.state_manager = StateManager()
         
         # Initialize state if needed
         if not self.state_manager.get_state('filters.filter_configs'):
@@ -210,6 +215,27 @@ class FilterManager:
         # Update filter config
         filter_configs[column] = filter_config
         self.state_manager.update_state('filters.filter_configs', filter_configs)
+
+    def render_all_filters_ui(self) -> None:
+        """
+        Render filter UI for all available columns.
+        This method is called from the filters page.
+        """
+        df = self.state_manager.get_state('data.current_df')
+        column_types = self.state_manager.get_state('data.column_types', {})
+        
+        if df is None or not column_types:
+            st.warning("No data available for filtering.")
+            return
+        
+        # Create filters for all columns if they don't exist
+        self.create_filters(df, column_types)
+        
+        # Render filter UI for each column
+        for column in df.columns:
+            if column in column_types:
+                data_type = column_types[column]
+                self.render_filter_ui(column, data_type)
     
     def _render_categorical_filter_ui(self, column: str, filter_config: Dict[str, Any]) -> None:
         """Render UI for categorical filters with proper callbacks and validation."""

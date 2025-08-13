@@ -5,10 +5,10 @@ import pytest
 import pandas as pd
 import numpy as np
 
-from core.data_handler import DataHandler
-from core.feature_engine import FeatureEngine
-from core.report_engine import ReportEngine
-from utils.data_types import DataType
+from src.services.data_handler import DataHandler
+from src.services.feature_engine import FeatureEngine
+from src.services.report_engine import ReportEngine
+from src.utils.data_types import DataType
 
 
 class TestIntegration:

@@ -9,9 +9,9 @@ import streamlit as st
 import logging
 from io import StringIO
 
-from core.state_manager import StateManager
-from core.data_handler import DataHandler
-from utils.data_types import DataType
+from src.services.state_manager import StateManager
+from src.services.data_handler import DataHandler
+from src.utils.data_types import DataType
 
 logger = logging.getLogger(__name__)
 

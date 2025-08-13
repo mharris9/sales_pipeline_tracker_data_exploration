@@ -6,8 +6,8 @@ import pandas as pd
 import numpy as np
 from unittest.mock import patch
 
-from core.data_handler import DataHandler
-from utils.data_types import DataType
+from src.services.data_handler import DataHandler
+from src.utils.data_types import DataType
 
 
 class TestDataHandler:

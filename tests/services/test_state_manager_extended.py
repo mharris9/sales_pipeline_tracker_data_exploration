@@ -7,8 +7,8 @@ import numpy as np
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 import streamlit as st
-from core.state_manager import StateManager, StateChangeType
-from utils.data_types import DataType
+from src.services.state_manager import StateManager
+from src.utils.data_types import DataType
 import time
 import json
 
@@ -31,12 +31,12 @@ class MockSessionState:
     def __contains__(self, key):
         return key in self._state
 
-@pytest.fixture
-def mock_streamlit():
-    """Mock Streamlit module."""
-    with patch('core.state_manager.st') as mock_st:
-        mock_st.session_state = MockSessionState()
-        yield mock_st
+    @pytest.fixture
+    def mock_streamlit():
+        """Mock Streamlit for testing."""
+        with patch('src.services.state_manager.st') as mock_st:
+            mock_st.session_state = MockSessionState()
+            yield mock_st
 
 @pytest.fixture
 def state_manager(mock_streamlit):

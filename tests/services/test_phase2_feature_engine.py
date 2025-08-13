@@ -7,9 +7,9 @@ import numpy as np
 import streamlit as st
 import logging
 
-from core.state_manager import StateManager
-from core.feature_engine import FeatureEngine
-from utils.data_types import DataType
+from src.services.state_manager import StateManager
+from src.services.feature_engine import FeatureEngine
+from src.utils.data_types import DataType
 
 logger = logging.getLogger(__name__)
 

@@ -6,9 +6,9 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import streamlit as st
-from core.filter_manager import FilterManager
-from utils.data_types import DataType, detect_data_type
-from test_data_generator import generate_test_data, get_expected_filter_results
+from src.services.filter_manager import FilterManager
+from src.utils.data_types import DataType, detect_data_type
+from ..utils.test_data_generator import generate_test_data, get_expected_filter_results
 
 class TestFilterFunctionality:
     @pytest.fixture(scope="class")

@@ -6,8 +6,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-from core.report_engine import ReportEngine
-from utils.data_types import DataType
+from src.services.report_engine import ReportEngine
+from src.utils.data_types import DataType
 
 
 class TestReportEngine:

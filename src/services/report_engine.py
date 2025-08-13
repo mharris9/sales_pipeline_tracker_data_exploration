@@ -16,12 +16,17 @@ class ReportEngine:
     Generates and manages data reports using centralized state management.
     """
     
-    def __init__(self):
+    def __init__(self, state_manager=None):
         """Initialize the ReportEngine."""
         # Get state manager instance
-        if not hasattr(st.session_state, 'state_manager'):
-            raise RuntimeError("StateManager not initialized")
-        self.state_manager = st.session_state.state_manager
+        if state_manager is not None:
+            self.state_manager = state_manager
+        elif hasattr(st.session_state, 'state_manager'):
+            self.state_manager = st.session_state.state_manager
+        else:
+            # Create a temporary state manager for testing
+            from src.services.state_manager import StateManager
+            self.state_manager = StateManager()
         
         # Store report functions separately (not in state)
         self.report_functions: Dict[str, Callable] = {}
@@ -126,7 +131,22 @@ class ReportEngine:
         """Get list of active reports."""
         report_active = self.state_manager.get_state('report_active', {})
         return [name for name, active in report_active.items() if active]
-    
+
+    def get_available_reports(self) -> List[Dict[str, Any]]:
+        """Get list of all available reports with their configurations."""
+        report_configs = self.state_manager.get_state('report_configs', {})
+        report_active = self.state_manager.get_state('report_active', {})
+        
+        reports = []
+        for name, config in report_configs.items():
+            reports.append({
+                'name': name,
+                'description': config.get('description', name),
+                'active': report_active.get(name, False)
+            })
+        
+        return reports
+
     def generate_reports(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Generate all active reports.
@@ -240,3 +260,169 @@ class ReportEngine:
         self.state_manager.set_state(f'report_results/date_trends', results)
         
         return df
+
+    def _get_most_recent_snapshots(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Get the most recent snapshot for each unique ID.
+        
+        Args:
+            df: DataFrame with ID and date columns
+            
+        Returns:
+            DataFrame with deduplicated records (most recent per ID)
+        """
+        if df.empty:
+            return df
+        
+        # Try to find potential ID and date columns
+        id_columns = [col for col in df.columns if any(keyword in col.lower() for keyword in ['id', 'identifier', 'key', 'primary'])]
+        date_columns = [col for col in df.columns if any(keyword in col.lower() for keyword in ['date', 'time', 'created', 'updated', 'modified', 'timestamp'])]
+        
+        # Use the first found columns or return original dataframe if not found
+        if not id_columns or not date_columns:
+            logger.warning("Could not find suitable ID and date columns for deduplication")
+            return df
+        
+        id_column = id_columns[0]
+        date_column = date_columns[0]
+        
+        logger.info(f"Using '{id_column}' as ID column and '{date_column}' as date column for deduplication")
+        
+        # Ensure date column is datetime
+        df_copy = df.copy()
+        if not pd.api.types.is_datetime64_any_dtype(df_copy[date_column]):
+            df_copy[date_column] = pd.to_datetime(df_copy[date_column], errors='coerce')
+        
+        # Remove rows with invalid dates
+        df_copy = df_copy.dropna(subset=[date_column])
+        
+        if df_copy.empty:
+            logger.warning("No valid dates found after conversion")
+            return df_copy
+        
+        # Get the most recent snapshot for each ID
+        deduplicated = df_copy.loc[df_copy.groupby(id_column)[date_column].idxmax()]
+        
+        logger.info(f"Deduplicated {len(df)} records to {len(deduplicated)} records")
+        return deduplicated
+
+    def generate_time_series(self, df: pd.DataFrame, config: Dict[str, Any]) -> tuple:
+        """
+        Generate time series visualization.
+        
+        Args:
+            df: DataFrame to analyze
+            config: Configuration dictionary with keys:
+                - 'date_column': Column name for dates
+                - 'value_column': Column name for values
+                - 'group_by': Optional column to group by
+                - 'aggregation': Aggregation method ('sum', 'mean', 'count')
+                - 'freq': Frequency ('D', 'W', 'M', 'Q', 'Y')
+                
+        Returns:
+            Tuple of (plotly figure, data table)
+        """
+        import plotly.express as px
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        
+        try:
+            date_column = config.get('date_column', 'Snapshot Date')
+            value_column = config.get('value_column')
+            group_by = config.get('group_by')
+            aggregation = config.get('aggregation', 'count')
+            freq = config.get('freq', 'M')
+            
+            # Validate columns exist
+            if date_column not in df.columns:
+                raise ValueError(f"Date column '{date_column}' not found")
+            
+            if value_column and value_column not in df.columns:
+                raise ValueError(f"Value column '{value_column}' not found")
+            
+            # Prepare data
+            df_copy = df.copy()
+            
+            # Convert date column
+            if not pd.api.types.is_datetime64_any_dtype(df_copy[date_column]):
+                df_copy[date_column] = pd.to_datetime(df_copy[date_column], errors='coerce')
+            
+            df_copy = df_copy.dropna(subset=[date_column])
+            
+            if df_copy.empty:
+                raise ValueError("No valid dates found after conversion")
+            
+            # Set date as index for resampling
+            df_copy = df_copy.set_index(date_column)
+            
+            # Prepare aggregation
+            if value_column:
+                if aggregation == 'sum':
+                    agg_func = 'sum'
+                elif aggregation == 'mean':
+                    agg_func = 'mean'
+                elif aggregation == 'count':
+                    agg_func = 'count'
+                else:
+                    agg_func = 'sum'
+                
+                if group_by and group_by in df_copy.columns:
+                    # Group by both date and category
+                    grouped = df_copy.groupby([pd.Grouper(freq=freq), group_by])[value_column].agg(agg_func).reset_index()
+                    
+                    # Create line plot
+                    fig = px.line(grouped, x=date_column, y=value_column, color=group_by,
+                                title=f"Time Series: {value_column} by {group_by} ({freq})")
+                else:
+                    # Simple time series
+                    resampled = df_copy[value_column].resample(freq).agg(agg_func)
+                    fig = px.line(x=resampled.index, y=resampled.values,
+                                title=f"Time Series: {value_column} ({freq})")
+            else:
+                # Count records over time
+                if group_by and group_by in df_copy.columns:
+                    grouped = df_copy.groupby([pd.Grouper(freq=freq), group_by]).size().reset_index(name='count')
+                    fig = px.line(grouped, x=date_column, y='count', color=group_by,
+                                title=f"Record Count by {group_by} ({freq})")
+                else:
+                    resampled = df_copy.resample(freq).size()
+                    fig = px.line(x=resampled.index, y=resampled.values,
+                                title=f"Record Count ({freq})")
+            
+            # Update layout
+            fig.update_layout(
+                height=400,
+                showlegend=True,
+                xaxis_title="Date",
+                yaxis_title=value_column if value_column else "Count"
+            )
+            
+            # Create data table
+            if value_column and group_by and group_by in df_copy.columns:
+                data_table = grouped
+            elif value_column:
+                data_table = resampled.reset_index()
+                data_table.columns = [date_column, value_column]
+            elif group_by and group_by in df_copy.columns:
+                data_table = grouped
+            else:
+                data_table = resampled.reset_index()
+                data_table.columns = [date_column, 'count']
+            
+            return fig, data_table
+            
+        except Exception as e:
+            logger.error(f"Error generating time series: {str(e)}")
+            # Return empty figure and empty DataFrame
+            fig = go.Figure()
+            fig.add_annotation(text=f"Error: {str(e)}", xref="paper", yref="paper", x=0.5, y=0.5)
+            return fig, pd.DataFrame()
+
+    def get_current_chart(self) -> Optional[Any]:
+        """
+        Get the current chart figure.
+        
+        Returns:
+            Current chart figure or None if no chart is available
+        """
+        return self.state_manager.get_state('reports.current_chart')

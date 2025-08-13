@@ -10,13 +10,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from core.state_manager import StateManager
-from core.data_handler import DataHandler
-from core.filter_manager import FilterManager
-from core.feature_engine import FeatureEngine
-from core.report_engine import ReportEngine
-from core.outlier_manager import OutlierManager
-from utils.export_utils import ExportManager
+from src.services.state_manager import StateManager
+from src.services.data_handler import DataHandler
+from src.services.filter_manager import FilterManager
+from src.services.feature_engine import FeatureEngine
+from src.services.report_engine import ReportEngine
+from src.services.outlier_manager import OutlierManager
+from src.utils.export_utils import ExportManager
 
 @pytest.fixture
 def mock_session_state(monkeypatch):

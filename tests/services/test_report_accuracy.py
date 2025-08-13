@@ -15,7 +15,7 @@ from tests.fixtures.controlled_test_data import (
     get_expected_results, 
     get_test_scenarios
 )
-from core.report_engine import ReportEngine
+from src.services.report_engine import ReportEngine
 
 
 class TestReportAccuracy:

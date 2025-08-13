@@ -19,12 +19,17 @@ class OutlierManager:
     Manages outlier detection and exclusion for data analysis.
     """
     
-    def __init__(self):
+    def __init__(self, state_manager=None):
         """Initialize the OutlierManager."""
         # Get state manager instance
-        if not hasattr(st.session_state, 'state_manager'):
-            raise RuntimeError("StateManager not initialized")
-        self.state_manager = st.session_state.state_manager
+        if state_manager is not None:
+            self.state_manager = state_manager
+        elif hasattr(st.session_state, 'state_manager'):
+            self.state_manager = st.session_state.state_manager
+        else:
+            # Create a temporary state manager for testing
+            from src.services.state_manager import StateManager
+            self.state_manager = StateManager()
         
         # Store detector functions separately (not in state)
         self.detector_functions: Dict[str, Callable] = {}
@@ -133,9 +138,24 @@ class OutlierManager:
     
     def get_active_detectors(self) -> List[str]:
         """Get list of active detectors."""
-        detector_active = self.state_manager.get_state('outlier_active', {})
-        return [name for name, active in detector_active.items() if active]
-    
+        outlier_active = self.state_manager.get_state('outlier_active', {})
+        return [name for name, active in outlier_active.items() if active]
+
+    def get_available_detectors(self) -> List[Dict[str, Any]]:
+        """Get list of all available detectors with their configurations."""
+        outlier_configs = self.state_manager.get_state('outlier_configs', {})
+        outlier_active = self.state_manager.get_state('outlier_active', {})
+        
+        detectors = []
+        for name, config in outlier_configs.items():
+            detectors.append({
+                'name': name,
+                'description': config.get('description', name),
+                'active': outlier_active.get(name, False)
+            })
+        
+        return detectors
+
     def detect_outliers(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Detect outliers using all active detectors.

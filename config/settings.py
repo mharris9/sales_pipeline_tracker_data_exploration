@@ -50,3 +50,7 @@ CACHE_TTL = 3600  # Cache time-to-live in seconds
 SIDEBAR_WIDTH = 300
 FILTER_CONTAINER_HEIGHT = 400
 
+# Filters Configuration
+# Maximum unique values before switching categorical filters to text search mode
+FILTER_MAX_CATEGORIES = 1000
+

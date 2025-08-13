@@ -151,14 +151,14 @@ def mock_streamlit(mocker):
     mocker.patch('streamlit.success')
     
     # Also patch the module imports in our code
-    mocker.patch('core.data_handler.st.warning')
-    mocker.patch('core.data_handler.st.error')
-    mocker.patch('core.data_handler.st.info')
-    mocker.patch('core.feature_engine.st.warning')
-    mocker.patch('core.feature_engine.st.error')
-    mocker.patch('core.feature_engine.st.info')
-    mocker.patch('core.report_engine.st.warning')
-    mocker.patch('core.report_engine.st.error')
-    mocker.patch('core.report_engine.st.info')
+    mocker.patch('src.services.data_handler.st.warning')
+    mocker.patch('src.services.data_handler.st.error')
+    mocker.patch('src.services.data_handler.st.info')
+    mocker.patch('src.services.feature_engine.st.warning')
+    mocker.patch('src.services.feature_engine.st.error')
+    mocker.patch('src.services.feature_engine.st.info')
+    mocker.patch('src.services.report_engine.st.warning')
+    mocker.patch('src.services.report_engine.st.error')
+    mocker.patch('src.services.report_engine.st.info')
     
     return mocker

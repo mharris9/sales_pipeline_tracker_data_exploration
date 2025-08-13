@@ -2,7 +2,7 @@
 Tests for the StateManager class.
 """
 import pytest
-from core.state_manager import StateManager
+from src.services.state_manager import StateManager
 
 def test_initialization():
     """Test StateManager initialization."""

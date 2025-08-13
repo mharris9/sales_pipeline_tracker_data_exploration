@@ -11,11 +11,11 @@ import os
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from services.state_manager import StateManager
-from services.data_handler import DataHandler
-from services.filter_manager import FilterManager
-from services.feature_engine import FeatureEngine
-from utils.data_types import DataType
+from src.services.state_manager import StateManager
+from src.services.data_handler import DataHandler
+from src.services.filter_manager import FilterManager
+from src.services.feature_engine import FeatureEngine
+from src.utils.data_types import DataType
 
 @pytest.fixture
 def mock_session_state():

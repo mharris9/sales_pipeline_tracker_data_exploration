@@ -16,9 +16,9 @@ from tests.fixtures.controlled_test_data import (
     get_test_scenarios,
     validate_dataset_integrity
 )
-from core.data_handler import DataHandler
-from core.feature_engine import FeatureEngine
-from core.report_engine import ReportEngine
+from src.services.data_handler import DataHandler
+from src.services.feature_engine import FeatureEngine
+from src.services.report_engine import ReportEngine
 
 
 class TestCalculationAccuracy:
